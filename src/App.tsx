@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { QuestionnaireData, AdminUser } from './types';
 import { emptyQuestionnaire, sampleQuestionnaire } from './data/initialData';
 import { Header } from './components/Header';
+import { FormTitleBanner } from './components/FormTitleBanner';
 import { ProgressBar } from './components/ProgressBar';
 import { Section1General } from './components/Section1General';
 import { Section2Users } from './components/Section2Users';
@@ -177,8 +178,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 font-sans flex flex-col pb-24">
-      {/* Header */}
+      {/* Sticky Header: Logo + Admin Access ONLY */}
       <Header
+        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+        onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
+        adminUser={adminUser}
+      />
+
+      {/* Form Title Banner (Below Header): Title, Callout, Actions, Client Fields */}
+      <FormTitleBanner
         data={data}
         onChangeClientInfo={handleClientInfoChange}
         onLoadSample={handleLoadSample}
@@ -186,9 +194,6 @@ export default function App() {
         onSave={handleSaveDraft}
         onOpenSummary={() => setIsSummaryOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
-        onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
-        adminUser={adminUser}
         viewMode={viewMode}
         setViewMode={setViewMode}
         completionPercentage={completionPercentage}
