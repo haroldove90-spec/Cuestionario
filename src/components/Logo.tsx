@@ -11,7 +11,7 @@ export const Logo: React.FC<LogoProps> = ({
 }) => {
   return (
     <img
-      src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
+      src="https://jetychvxbrgqlnxwrdew.supabase.co/storage/v1/object/public/logo/appdesignlogo.png"
       alt="App Design Logo"
       referrerPolicy="no-referrer"
       className={`${className} object-contain shrink-0`}

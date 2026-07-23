@@ -84,11 +84,15 @@ SET password_hash = '${ADMIN_CREDENTIALS.password}',
     full_name = '${ADMIN_CREDENTIALS.name}',
     name = '${ADMIN_CREDENTIALS.name}';
 
--- 5. Habilitar permisos de lectura y escritura para API Pública (Desactivar RLS)
+-- 5. Habilitar permisos de lectura y escritura para API Pública (Desactivar RLS y Otorgar Permisos)
 ALTER TABLE public.client_users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.questionnaire_responses DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_notifications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users DISABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role, postgres;
 `;
 
 // Helper para registro de clientes directamente en Supabase
@@ -121,9 +125,15 @@ export async function registerClientInSupabase(
       if (error.message.includes('unique') || error.message.includes('duplicate')) {
         return { success: false, error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.' };
       }
+      if (error.message.includes('permission denied')) {
+        return {
+          success: false,
+          error: `Permiso denegado en Supabase (permission denied). Por favor ejecuta las líneas de GRANT en el Editor SQL de Supabase: GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;`,
+        };
+      }
       return {
         success: false,
-        error: `No se pudo guardar el usuario en Supabase: ${error.message}. Asegúrate de haber ejecutado el SQL en Supabase para crear la tabla 'client_users'.`,
+        error: `No se pudo guardar el usuario en Supabase: ${error.message}. Asegúrate de ejecutar el código SQL en el Panel Admin (Ver Código SQL de Supabase).`,
       };
     }
 
