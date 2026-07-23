@@ -10,8 +10,10 @@ import { Section4Data } from './components/Section4Data';
 import { Section5Reports } from './components/Section5Reports';
 import { Section6Tech } from './components/Section6Tech';
 import { SummaryModal } from './components/SummaryModal';
+import { SupabaseSqlModal } from './components/SupabaseSqlModal';
 import { Toast } from './components/Toast';
-import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, ShieldCheck } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2 } from 'lucide-react';
+import { saveResponseToSupabase } from './lib/supabase';
 
 const STORAGE_KEY = 'management_system_questionnaire_draft_v1';
 
@@ -29,7 +31,12 @@ export default function App() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // If saved data had pre-loaded sample values from prior sessions, return empty questionnaire if company is Autopartes
+        if (parsed.companyName === 'Autopartes y Servicios Monterrey') {
+          return emptyQuestionnaire;
+        }
+        return parsed;
       }
     } catch (e) {
       console.error('Error loading saved draft:', e);
@@ -40,6 +47,8 @@ export default function App() {
   const [currentSection, setCurrentSection] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'wizard' | 'full'>('wizard');
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+  const [isSavingToSupabase, setIsSavingToSupabase] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Auto-save to localStorage on data change
@@ -119,6 +128,17 @@ export default function App() {
   const completedCount = completedSections.filter(Boolean).length;
   const completionPercentage = Math.round((completedCount / 6) * 100);
 
+  const handleDirectSaveSupabase = async () => {
+    setIsSavingToSupabase(true);
+    const res = await saveResponseToSupabase(data);
+    setIsSavingToSupabase(false);
+    if (res.success) {
+      showToast('¡Guardado exitosamente en Supabase!');
+    } else {
+      showToast(`Error guardando en Supabase: ${res.error}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 font-sans flex flex-col pb-24">
       {/* Header */}
@@ -129,6 +149,7 @@ export default function App() {
         onClear={handleClear}
         onSave={handleSaveDraft}
         onOpenSummary={() => setIsSummaryOpen(true)}
+        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         viewMode={viewMode}
         setViewMode={setViewMode}
         completionPercentage={completionPercentage}
@@ -320,11 +341,21 @@ export default function App() {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={handleDirectSaveSupabase}
+              disabled={isSavingToSupabase}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {isSavingToSupabase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+              <span>{isSavingToSupabase ? 'Guardando...' : 'Enviar a Supabase'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleSaveDraft}
               className="px-3 py-1.5 text-slate-700 hover:text-slate-900 font-medium bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
             >
               <Save className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Guardar</span>
+              <span className="hidden sm:inline">Guardar Borrador</span>
             </button>
 
             <button
@@ -345,6 +376,14 @@ export default function App() {
         isOpen={isSummaryOpen}
         onClose={() => setIsSummaryOpen(false)}
         onToast={showToast}
+      />
+
+      {/* Supabase SQL & Configuration Modal */}
+      <SupabaseSqlModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
+        data={data}
+        onSuccessToast={showToast}
       />
 
       {/* Toast Notification */}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Copy, Download, Printer, CheckCircle, FileText, Building2, User, Phone, Mail, Calendar } from 'lucide-react';
+import { X, Copy, Download, Printer, CheckCircle, FileText, Building2, User, Phone, Mail, Database, Loader2 } from 'lucide-react';
 import { QuestionnaireData } from '../types';
+import { saveResponseToSupabase } from '../lib/supabase';
 
 interface SummaryModalProps {
   data: QuestionnaireData;
@@ -16,6 +17,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
   onToast,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isSavingSupabase, setIsSavingSupabase] = useState(false);
 
   if (!isOpen) return null;
 
@@ -192,6 +194,18 @@ ${
     window.print();
   };
 
+  const handleSaveSupabase = async () => {
+    setIsSavingSupabase(true);
+    const res = await saveResponseToSupabase(data);
+    setIsSavingSupabase(false);
+
+    if (res.success) {
+      onToast('¡Formulario guardado exitosamente en Supabase!');
+    } else {
+      onToast(`Error guardando en Supabase: ${res.error}`);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
       <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
@@ -211,7 +225,17 @@ ${
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveSupabase}
+              disabled={isSavingSupabase}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              {isSavingSupabase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
+              {isSavingSupabase ? 'Guardando...' : 'Guardar en Supabase'}
+            </button>
+
             <button
               type="button"
               onClick={handleCopyMarkdown}
