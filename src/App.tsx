@@ -164,10 +164,14 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     
     // Save draft to Supabase associated with the logged in client or current session
-    await saveResponseToSupabase(data, currentClient?.id);
+    const res = await saveResponseToSupabase(data, currentClient?.id);
     setIsSavingDraft(false);
 
-    showToast('Borrador guardado correctamente. Puedes continuar en cualquier momento.');
+    if (res.success) {
+      showToast('¡Borrador guardado exitosamente en la Base de Datos (Supabase)!');
+    } else {
+      showToast('Borrador guardado localmente (sincronizando con Supabase...)');
+    }
   };
 
   // Section completion evaluation logic

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Copy, Download, Printer, CheckCircle, FileText, Building2, User, Phone, Mail, Database, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Printer, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2 } from 'lucide-react';
 import { QuestionnaireData } from '../types';
 import { saveResponseToSupabase } from '../lib/supabase';
 
@@ -16,10 +16,33 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
   onClose,
   onToast,
 }) => {
-  const [copied, setCopied] = useState(false);
-  const [isSavingSupabase, setIsSavingSupabase] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [synced, setSynced] = useState(false);
+
+  // Auto-save to Supabase in the background whenever the summary modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const autoSave = async () => {
+        setIsSyncing(true);
+        const res = await saveResponseToSupabase(data);
+        setIsSyncing(false);
+        if (res.success) {
+          setSynced(true);
+        }
+      };
+      autoSave();
+    }
+  }, [isOpen, data]);
 
   if (!isOpen) return null;
+
+  const handlePrint = async () => {
+    setIsSyncing(true);
+    await saveResponseToSupabase(data);
+    setIsSyncing(false);
+    setSynced(true);
+    window.print();
+  };
 
   const generateMarkdown = (): string => {
     return `# CUESTIONARIO PARA EL DISEÑO DE SISTEMA DE GESTIÓN
@@ -164,53 +187,11 @@ ${
 `;
   };
 
-  const handleCopyMarkdown = () => {
-    const text = generateMarkdown();
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    onToast('Resumen en formato texto/markdown copiado al portapapeles');
-    setTimeout(() => setCopied(false), 2500);
-  };
-
-  const handleDownloadJSON = () => {
-    const jsonStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const fileName = `cuestionario-${(data.companyName || 'empresa')
-      .toLowerCase()
-      .replace(/\s+/g, '-')}-${data.dateSubmitted}.json`;
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    onToast(`Archivo JSON descargado: ${fileName}`);
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleSaveSupabase = async () => {
-    setIsSavingSupabase(true);
-    const res = await saveResponseToSupabase(data);
-    setIsSavingSupabase(false);
-
-    if (res.success) {
-      onToast('¡Formulario guardado exitosamente en Supabase!');
-    } else {
-      onToast(`Error guardando en Supabase: ${res.error}`);
-    }
-  };
-
-  return (
+    return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
       <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
         {/* Modal Header */}
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
+        <div className="px-6 py-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
               <FileText className="w-5 h-5" />
@@ -225,39 +206,27 @@ ${
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveSupabase}
-              disabled={isSavingSupabase}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              {isSavingSupabase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
-              {isSavingSupabase ? 'Guardando...' : 'Guardar en Supabase'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopyMarkdown}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-xs cursor-pointer"
-            >
-              {copied ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? '¡Copiado!' : 'Copiar Texto'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadJSON}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all cursor-pointer border border-slate-700"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Descargar JSON
-            </button>
+          <div className="flex items-center gap-3">
+            {/* Automatic Supabase Sync Status Indicator */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold rounded-xl">
+              {isSyncing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  <span>Sincronizando con Supabase...</span>
+                </>
+              ) : (
+                <>
+                  <Database className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Sincronizado en Supabase</span>
+                </>
+              )}
+            </div>
 
             <button
               type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md cursor-pointer"
+              disabled={isSyncing}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
               title="Exportar cuestionario a documento PDF"
             >
               <Printer className="w-4 h-4" />

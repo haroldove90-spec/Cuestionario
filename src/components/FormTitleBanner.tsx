@@ -81,8 +81,8 @@ export const FormTitleBanner: React.FC<FormTitleBannerProps> = ({
             <button
               type="button"
               onClick={onSave}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-              title="Guardar estado actual en el navegador"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+              title="Guardar borrador directamente en la Base de Datos Supabase"
             >
               <Save className="w-3.5 h-3.5 text-slate-600" />
               Guardar Borrador
