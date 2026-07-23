@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, Lock } from 'lucide-react';
 import { AdminUser } from '../types';
+import { Logo } from './Logo';
 
 interface HeaderProps {
   onOpenAdminLogin: () => void;
@@ -25,16 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="flex items-center group cursor-pointer focus:outline-none shrink-0"
           title="Ir al Inicio"
         >
-          <img
-            src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
-            alt="App Design Logo"
-            className="h-9 sm:h-10 w-auto object-contain transition-opacity group-hover:opacity-90"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null;
-              target.style.display = 'none';
-            }}
-          />
+          <Logo className="h-9 sm:h-10 w-auto" variant="light" />
         </button>
 
         {/* Acceso al Rol Admin únicamente */}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, UserPlus, LogIn, Eye, EyeOff, User, Mail, Phone, Lock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, UserPlus, LogIn, Eye, EyeOff, User, Mail, Phone, Lock, CheckCircle2, AlertCircle, Building2 } from 'lucide-react';
 import { ClientUser } from '../types';
 import { registerClientInSupabase, loginClientInSupabase } from '../lib/supabase';
 
@@ -19,6 +19,7 @@ export const ClientAuthModal: React.FC<ClientAuthModalProps> = ({
 
   // Form Fields
   const [fullName, setFullName] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [password, setPassword] = useState('');
@@ -36,8 +37,8 @@ export const ClientAuthModal: React.FC<ClientAuthModalProps> = ({
     setSuccessMsg(null);
 
     if (mode === 'register') {
-      if (!fullName.trim() || !email.trim() || !whatsapp.trim() || !password.trim()) {
-        setErrorMsg('Por favor completa todos los campos requeridos.');
+      if (!fullName.trim() || !companyName.trim() || !email.trim() || !whatsapp.trim() || !password.trim()) {
+        setErrorMsg('Por favor completa todos los campos requeridos, incluyendo tu Empresa.');
         return;
       }
       if (password.trim().length < 4) {
@@ -46,7 +47,7 @@ export const ClientAuthModal: React.FC<ClientAuthModalProps> = ({
       }
 
       setIsLoading(true);
-      const res = await registerClientInSupabase(fullName, email, whatsapp, password);
+      const res = await registerClientInSupabase(fullName, companyName, email, whatsapp, password);
       setIsLoading(false);
 
       if (res.success && res.client) {
@@ -160,22 +161,41 @@ export const ClientAuthModal: React.FC<ClientAuthModalProps> = ({
           )}
 
           {mode === 'register' && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Nombre del Cliente <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. Ing. Carlos Mendoza"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-slate-800"
-                />
+            <>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nombre del Cliente <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Ing. Carlos Mendoza"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-slate-800"
+                  />
+                </div>
               </div>
-            </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Empresa / Negocio <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Autopartes y Servicios Monterrey"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-slate-800"
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div>

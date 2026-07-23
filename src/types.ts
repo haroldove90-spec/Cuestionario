@@ -99,6 +99,7 @@ export interface ClientUser {
   id: string;
   created_at: string;
   full_name: string;
+  company_name?: string;
   email: string;
   whatsapp: string;
   password_hash?: string;

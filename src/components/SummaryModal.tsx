@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Printer, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2 } from 'lucide-react';
 import { QuestionnaireData } from '../types';
 import { saveResponseToSupabase } from '../lib/supabase';
+import { Logo } from './Logo';
 
 interface SummaryModalProps {
   data: QuestionnaireData;
@@ -248,11 +249,7 @@ ${
           {/* Official Brand Header with Logo for PDF Export */}
           <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
             <div className="flex items-center gap-3">
-              <img
-                src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
-                alt="App Design Logo"
-                className="h-10 sm:h-12 w-auto object-contain shrink-0"
-              />
+              <Logo className="h-10 sm:h-12 w-auto" variant="light" />
               <div>
                 <h2 className="font-extrabold text-slate-900 text-lg tracking-tight">App Design</h2>
                 <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Cuestionario de Requerimientos de Software</p>

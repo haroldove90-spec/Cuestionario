@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, UserCheck, Lock, User, ArrowRight } from 'lucide-react';
 import { ClientUser, AdminUser } from '../types';
+import { Logo } from './Logo';
 
 interface HomeScreenProps {
   onOpenClientAuth: () => void;
@@ -23,18 +24,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-center p-4 sm:p-6 select-none relative overflow-hidden">
       <div className="w-full max-w-lg mx-auto flex flex-col items-center text-center space-y-8">
         
-        {/* 1. Logo Únicamente (Directo, sin encapsular en tarjetas ni cajas) */}
+        {/* 1. Logo Únicamente (Directo, sin encapsular en nada) */}
         <div className="flex flex-col items-center justify-center pt-2">
-          <img
-            src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
-            alt="App Design Logo"
-            className="h-16 sm:h-20 w-auto object-contain"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.onerror = null;
-              target.src = 'https://via.placeholder.com/200x80?text=LOGO';
-            }}
-          />
+          <Logo className="h-16 sm:h-20 w-auto" variant="light" />
         </div>
 
         {/* Subtítulo discreto de selección de rol */}

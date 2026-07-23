@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Logo } from './Logo';
 import {
   X,
   Database,
@@ -214,11 +215,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       {/* Top Header Bar (Full Width) */}
       <div className="bg-slate-900 text-white px-4 sm:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 shrink-0 shadow-md">
         <div className="flex items-center gap-3">
-          <img
-            src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
-            alt="App Design Logo"
-            className="h-8 sm:h-9 w-auto object-contain shrink-0"
-          />
+          <Logo className="h-8 sm:h-9 w-auto" variant="dark" />
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-sm sm:text-base text-white tracking-tight">Panel de Control Administrador</h2>

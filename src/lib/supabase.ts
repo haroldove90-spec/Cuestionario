@@ -15,9 +15,9 @@ export const ADMIN_CREDENTIALS = {
 };
 
 export const SUPABASE_SQL_SCRIPT = `-- =======================================================
--- SQL DDL COMPLETO PARA SUPABASE (PRODUCCIÓN)
+-- SQL DDL COMPLETO Y CORREGIDO PARA SUPABASE (PRODUCCIÓN)
 -- Proyecto ID: ${SUPABASE_PROJECT_ID}
--- Copia este código y ejecútalo en: Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- Ejecútalo en: Supabase Dashboard -> SQL Editor -> New Query -> Run
 -- =======================================================
 
 -- 1. Tabla de Registro de Clientes
@@ -25,10 +25,14 @@ CREATE TABLE IF NOT EXISTS public.client_users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     full_name TEXT NOT NULL,
+    company_name TEXT,
     email TEXT UNIQUE NOT NULL,
     whatsapp TEXT NOT NULL,
     password_hash TEXT NOT NULL
 );
+
+-- Asegurar columna company_name en tablas previamente creadas
+ALTER TABLE public.client_users ADD COLUMN IF NOT EXISTS company_name TEXT;
 
 -- 2. Tabla de Respuestas de Cuestionarios
 CREATE TABLE IF NOT EXISTS public.questionnaire_responses (
@@ -61,16 +65,18 @@ CREATE TABLE IF NOT EXISTS public.admin_users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    full_name TEXT,
-    name TEXT,
+    full_name TEXT DEFAULT 'Administrador',
+    name TEXT DEFAULT 'Administrador',
     role TEXT DEFAULT 'admin'
 );
 
--- Garantizar compatibilidad si la tabla ya existía sin alguna columna
+-- Garantizar compatibilidad y remover restriccion NOT NULL en caso de que la tabla ya existia
 ALTER TABLE public.admin_users ADD COLUMN IF NOT EXISTS full_name TEXT;
 ALTER TABLE public.admin_users ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE public.admin_users ALTER COLUMN full_name DROP NOT NULL;
+ALTER TABLE public.admin_users ALTER COLUMN name DROP NOT NULL;
 
--- Insertar usuario administrador oficial por defecto
+-- Insertar usuario administrador con todos los campos requeridos
 INSERT INTO public.admin_users (email, password_hash, full_name, name, role)
 VALUES ('${ADMIN_CREDENTIALS.email}', '${ADMIN_CREDENTIALS.password}', '${ADMIN_CREDENTIALS.name}', '${ADMIN_CREDENTIALS.name}', 'admin')
 ON CONFLICT (email) DO UPDATE 
@@ -78,16 +84,17 @@ SET password_hash = '${ADMIN_CREDENTIALS.password}',
     full_name = '${ADMIN_CREDENTIALS.name}',
     name = '${ADMIN_CREDENTIALS.name}';
 
--- 5. Habilitar permisos sin restricciones para API Anon (Desactivar RLS)
+-- 5. Habilitar permisos de lectura y escritura para API Pública (Desactivar RLS)
 ALTER TABLE public.client_users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.questionnaire_responses DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_notifications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users DISABLE ROW LEVEL SECURITY;
 `;
 
-// Helper para registro de clientes
+// Helper para registro de clientes directamente en Supabase
 export async function registerClientInSupabase(
   fullName: string,
+  companyName: string,
   email: string,
   whatsapp: string,
   passwordInput: string
@@ -101,6 +108,7 @@ export async function registerClientInSupabase(
       .insert([
         {
           full_name: fullName.trim(),
+          company_name: companyName.trim(),
           email: cleanEmail,
           whatsapp: whatsapp.trim(),
           password_hash: cleanPassword,
@@ -109,24 +117,14 @@ export async function registerClientInSupabase(
       .select();
 
     if (error) {
+      console.error('Error insertando cliente en Supabase:', error);
       if (error.message.includes('unique') || error.message.includes('duplicate')) {
-        return { success: false, error: 'Este correo ya se encuentra registrado. Inicia sesión.' };
+        return { success: false, error: 'Este correo electrónico ya está registrado. Por favor inicia sesión.' };
       }
-      // Fallback local storage
-      const localClients = getLocalClients();
-      if (localClients.some((c) => c.email.toLowerCase() === cleanEmail)) {
-        return { success: false, error: 'Este correo ya existe en los registros locales.' };
-      }
-      const newClient: ClientUser = {
-        id: 'client-loc-' + Date.now(),
-        created_at: new Date().toISOString(),
-        full_name: fullName.trim(),
-        email: cleanEmail,
-        whatsapp: whatsapp.trim(),
-        password_hash: cleanPassword,
+      return {
+        success: false,
+        error: `No se pudo guardar el usuario en Supabase: ${error.message}. Asegúrate de haber ejecutado el SQL en Supabase para crear la tabla 'client_users'.`,
       };
-      saveLocalClients([...localClients, newClient]);
-      return { success: true, client: newClient };
     }
 
     const createdClient = data && data[0] ? (data[0] as ClientUser) : undefined;
@@ -136,7 +134,7 @@ export async function registerClientInSupabase(
     }
     return { success: true, client: createdClient };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'Error registrando cliente' };
+    return { success: false, error: err?.message || 'Error registrando cliente en Supabase' };
   }
 }
 

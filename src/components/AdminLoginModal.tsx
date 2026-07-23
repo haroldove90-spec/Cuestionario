@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, ShieldCheck, KeyRound, AlertCircle, ArrowRight, Loader2, Sparkles } from 'lucide-react';
-import { validateAdminLogin, ADMIN_CREDENTIALS } from '../lib/supabase';
+import { X, Lock, Mail, ShieldCheck, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { validateAdminLogin } from '../lib/supabase';
 import { AdminUser } from '../types';
 
 interface AdminLoginModalProps {
@@ -20,12 +20,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen) return null;
-
-  const handleFillCredentials = () => {
-    setEmail(ADMIN_CREDENTIALS.email);
-    setPassword(ADMIN_CREDENTIALS.password);
-    setErrorMsg(null);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,26 +73,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-5">
-          {/* Preset quick credential banner */}
-          <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs space-y-2">
-            <div className="flex items-center justify-between text-blue-900 font-bold">
-              <span className="flex items-center gap-1.5">
-                <KeyRound className="w-4 h-4 text-blue-600" /> Credenciales Administrador
-              </span>
-              <button
-                type="button"
-                onClick={handleFillCredentials}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
-              >
-                <Sparkles className="w-3 h-3" /> Autocompletar
-              </button>
-            </div>
-            <div className="grid grid-cols-1 gap-1 text-[11px] font-mono text-slate-700 bg-white/80 p-2 rounded-lg border border-blue-100">
-              <div><strong className="text-blue-900">Correo:</strong> {ADMIN_CREDENTIALS.email}</div>
-              <div><strong className="text-blue-900">Clave:</strong> {ADMIN_CREDENTIALS.password}</div>
-            </div>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
