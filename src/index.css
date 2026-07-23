@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+@media print {
+  /* Hide everything except the printable summary element */
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #printableSummary,
+  #printableSummary * {
+    visibility: visible;
+  }
+  #printableSummary {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { QuestionnaireData, AdminUser } from './types';
+import { QuestionnaireData, AdminUser, ClientUser } from './types';
 import { emptyQuestionnaire, sampleQuestionnaire } from './data/initialData';
 import { Header } from './components/Header';
 import { FormTitleBanner } from './components/FormTitleBanner';
@@ -14,12 +14,15 @@ import { SummaryModal } from './components/SummaryModal';
 import { SupabaseSqlModal } from './components/SupabaseSqlModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { ClientAuthModal } from './components/ClientAuthModal';
+import { HomeScreen } from './components/HomeScreen';
 import { Toast } from './components/Toast';
-import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2, Home } from 'lucide-react';
 import { saveResponseToSupabase } from './lib/supabase';
 
 const STORAGE_KEY = 'management_system_questionnaire_draft_v1';
 const ADMIN_SESSION_KEY = 'management_system_admin_session_v1';
+const CLIENT_SESSION_KEY = 'management_system_client_session_v1';
 
 const SECTION_TITLES = [
   '1. Generalidades y Objetivos',
@@ -31,6 +34,21 @@ const SECTION_TITLES = [
 ];
 
 export default function App() {
+  const [currentScreen, setCurrentScreen] = useState<'home' | 'questionnaire'>('home');
+
+  // Logged in client user
+  const [currentClient, setCurrentClient] = useState<ClientUser | null>(() => {
+    try {
+      const stored = localStorage.getItem(CLIENT_SESSION_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Error reading client session:', e);
+    }
+    return null;
+  });
+
   const [data, setData] = useState<QuestionnaireData>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -64,9 +82,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'wizard' | 'full'>('wizard');
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+  const [isClientAuthOpen, setIsClientAuthOpen] = useState<boolean>(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
-  const [isSavingToSupabase, setIsSavingToSupabase] = useState<boolean>(false);
+  const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleAdminLoginSuccess = (user: AdminUser) => {
@@ -87,6 +106,25 @@ export default function App() {
     showToast('Sesión de administrador cerrada.');
   };
 
+  const handleClientAuthSuccess = (client: ClientUser) => {
+    setCurrentClient(client);
+    try {
+      localStorage.setItem(CLIENT_SESSION_KEY, JSON.stringify(client));
+    } catch (e) {
+      console.error('Error saving client session:', e);
+    }
+
+    // Prefill form with client details if empty
+    setData((prev) => ({
+      ...prev,
+      clientName: prev.clientName || client.full_name,
+      contactEmail: prev.contactEmail || client.email,
+      contactPhone: prev.contactPhone || client.whatsapp,
+    }));
+
+    showToast(`¡Bienvenido ${client.full_name}! Cuestionario activado.`);
+    setCurrentScreen('questionnaire');
+  };
 
   // Auto-save to localStorage on data change
   useEffect(() => {
@@ -121,9 +159,15 @@ export default function App() {
     }
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
+    setIsSavingDraft(true);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    showToast('Borrador guardado correctamente en tu navegador.');
+    
+    // Save draft to Supabase associated with the logged in client or current session
+    await saveResponseToSupabase(data, currentClient?.id);
+    setIsSavingDraft(false);
+
+    showToast('Borrador guardado correctamente. Puedes continuar en cualquier momento.');
   };
 
   // Section completion evaluation logic
@@ -165,16 +209,49 @@ export default function App() {
   const completedCount = completedSections.filter(Boolean).length;
   const completionPercentage = Math.round((completedCount / 6) * 100);
 
-  const handleDirectSaveSupabase = async () => {
-    setIsSavingToSupabase(true);
-    const res = await saveResponseToSupabase(data);
-    setIsSavingToSupabase(false);
-    if (res.success) {
-      showToast('¡Guardado exitosamente en Supabase!');
-    } else {
-      showToast(`Error guardando en Supabase: ${res.error}`);
-    }
-  };
+  // If on HOME screen: render ONLY the minimalist Home landing (Logo + 2 Roles, NO header, NO navbar)
+  if (currentScreen === 'home') {
+    return (
+      <>
+        <HomeScreen
+          onOpenClientAuth={() => setIsClientAuthOpen(true)}
+          onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+          onContinueAsClient={() => setCurrentScreen('questionnaire')}
+          onContinueAsAdmin={() => setIsAdminDashboardOpen(true)}
+          currentClient={currentClient}
+          adminUser={adminUser}
+        />
+
+        {/* Client Auth Modal */}
+        <ClientAuthModal
+          isOpen={isClientAuthOpen}
+          onClose={() => setIsClientAuthOpen(false)}
+          onAuthSuccess={handleClientAuthSuccess}
+        />
+
+        {/* Admin Login Modal */}
+        <AdminLoginModal
+          isOpen={isAdminLoginOpen}
+          onClose={() => setIsAdminLoginOpen(false)}
+          onLoginSuccess={handleAdminLoginSuccess}
+        />
+
+        {/* Admin Dashboard Modal */}
+        {adminUser && (
+          <AdminDashboardModal
+            isOpen={isAdminDashboardOpen}
+            onClose={() => setIsAdminDashboardOpen(false)}
+            adminUser={adminUser}
+            onLogout={handleAdminLogout}
+            onSuccessToast={showToast}
+            sampleQuestionnaireData={sampleQuestionnaire}
+          />
+        )}
+
+        <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 font-sans flex flex-col pb-24">
@@ -183,6 +260,7 @@ export default function App() {
         onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
         onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
         adminUser={adminUser}
+        onGoHome={() => setCurrentScreen('home')}
       />
 
       {/* Form Title Banner (Below Header): Title, Callout, Actions, Client Fields */}
@@ -198,7 +276,6 @@ export default function App() {
         setViewMode={setViewMode}
         completionPercentage={completionPercentage}
       />
-
 
       {/* Progress Bar (Visible in wizard mode) */}
       {viewMode === 'wizard' && (
@@ -377,36 +454,35 @@ export default function App() {
       {/* Persistent Bottom Sticky Action Bar */}
       <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-20 py-2.5 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 text-slate-500 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="hidden sm:inline">Guardado automático activo en navegador</span>
-            <span className="sm:hidden">Auto-guardado</span>
+          <div className="flex items-center gap-3 text-slate-600 font-medium">
+            <button
+              type="button"
+              onClick={() => setCurrentScreen('home')}
+              className="inline-flex items-center gap-1 text-slate-700 hover:text-blue-600 font-bold bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+            >
+              <Home className="w-3.5 h-3.5" /> Inicio
+            </button>
+            <div className="flex items-center gap-1.5 text-slate-500">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="hidden sm:inline">Guardado en tiempo real activo</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={handleDirectSaveSupabase}
-              disabled={isSavingToSupabase}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {isSavingToSupabase ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Database className="w-3.5 h-3.5" />}
-              <span>{isSavingToSupabase ? 'Guardando...' : 'Enviar a Supabase'}</span>
-            </button>
-
-            <button
-              type="button"
               onClick={handleSaveDraft}
-              className="px-3 py-1.5 text-slate-700 hover:text-slate-900 font-medium bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+              disabled={isSavingDraft}
+              className="px-4 py-1.5 text-white font-extrabold bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg shadow-sm transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Guardar Borrador</span>
+              {isSavingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              <span>{isSavingDraft ? 'Guardando...' : 'Guardar Borrador'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsSummaryOpen(true)}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Eye className="w-3.5 h-3.5" />
               <span>Revisar y Exportar</span>
@@ -429,6 +505,13 @@ export default function App() {
         onClose={() => setIsSupabaseModalOpen(false)}
         data={data}
         onSuccessToast={showToast}
+      />
+
+      {/* Client Auth Modal */}
+      <ClientAuthModal
+        isOpen={isClientAuthOpen}
+        onClose={() => setIsClientAuthOpen(false)}
+        onAuthSuccess={handleClientAuthSuccess}
       />
 
       {/* Admin Login Modal */}
@@ -456,3 +539,4 @@ export default function App() {
     </div>
   );
 }
+

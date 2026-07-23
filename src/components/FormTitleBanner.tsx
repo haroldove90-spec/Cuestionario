@@ -28,20 +28,20 @@ export const FormTitleBanner: React.FC<FormTitleBannerProps> = ({
   completionPercentage,
 }) => {
   return (
-    <div className="bg-white border-b border-slate-200 shadow-2xs py-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
+    <div className="bg-white border-b border-slate-200 shadow-2xs py-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4">
         {/* Main Title below header */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-                <Building2 className="w-3 h-3" /> App Design • Gestión de Negocio
+            <div className="flex items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+                <Building2 className="w-3 h-3" /> Requerimientos • Gestión de Negocio
               </span>
               <span className="text-xs text-slate-500 font-bold">
                 • Avance: {completionPercentage}%
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
               Formulario para Desarrollar tu Programa de Gestión de Negocio
             </h1>
           </div>

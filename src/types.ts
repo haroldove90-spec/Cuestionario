@@ -95,3 +95,12 @@ export interface AdminUser {
   name: string;
 }
 
+export interface ClientUser {
+  id: string;
+  created_at: string;
+  full_name: string;
+  email: string;
+  whatsapp: string;
+  password_hash?: string;
+}
+

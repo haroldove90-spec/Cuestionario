@@ -257,10 +257,11 @@ ${
             <button
               type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition-all cursor-pointer border border-slate-700"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md cursor-pointer"
+              title="Exportar cuestionario a documento PDF"
             >
-              <Printer className="w-3.5 h-3.5" />
-              Imprimir / PDF
+              <Printer className="w-4 h-4" />
+              Exportar Cuestionario a PDF
             </button>
 
             <button
@@ -275,6 +276,26 @@ ${
 
         {/* Printable & Scrollable Content */}
         <div id="printableSummary" className="p-6 sm:p-8 overflow-y-auto space-y-6 text-slate-800 text-sm leading-relaxed">
+          {/* Official Brand Header with Logo for PDF Export */}
+          <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+            <div className="flex items-center gap-3">
+              <img
+                src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
+                alt="App Design Logo"
+                className="h-10 sm:h-12 w-auto object-contain shrink-0"
+              />
+              <div>
+                <h2 className="font-extrabold text-slate-900 text-lg tracking-tight">App Design</h2>
+                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Cuestionario de Requerimientos de Software</p>
+              </div>
+            </div>
+            <div className="text-right text-xs text-slate-600">
+              <span className="inline-block px-2.5 py-1 bg-slate-100 text-slate-800 rounded-md font-bold uppercase text-[10px] mb-1">
+                Documento Oficial
+              </span>
+              <p className="font-medium">Fecha: {data.dateSubmitted || new Date().toLocaleDateString()}</p>
+            </div>
+          </div>
           {/* Metadata banner */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-slate-50/70 rounded-xl border border-slate-200/80 text-xs shadow-2xs">
             <div className="flex items-center gap-2.5">

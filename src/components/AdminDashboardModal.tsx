@@ -31,6 +31,8 @@ import {
   AlertCircle,
   FileSpreadsheet,
   ShieldCheck,
+  UserCheck,
+  Users,
 } from 'lucide-react';
 import {
   fetchResponsesFromSupabase,
@@ -40,8 +42,9 @@ import {
   markNotificationReadInSupabase,
   saveLocalResponses,
   saveLocalNotifications,
+  fetchClientsFromSupabase,
 } from '../lib/supabase';
-import { QuestionnaireResponseRecord, AppNotification, AdminUser, QuestionnaireData } from '../types';
+import { QuestionnaireResponseRecord, AppNotification, AdminUser, QuestionnaireData, ClientUser } from '../types';
 
 interface AdminDashboardModalProps {
   isOpen: boolean;
@@ -58,15 +61,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   adminUser,
   onLogout,
   onSuccessToast,
-  sampleQuestionnaireData,
 }) => {
-  const [activeTab, setActiveTab] = useState<'responses' | 'metrics' | 'notifications'>('responses');
+  const [activeTab, setActiveTab] = useState<'responses' | 'clients' | 'metrics' | 'notifications'>('clients');
   const [responses, setResponses] = useState<QuestionnaireResponseRecord[]>([]);
+  const [clients, setClients] = useState<ClientUser[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Filters & Search
   const [searchTerm, setSearchTerm] = useState('');
+  const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
 
   // Selected response for inspection
@@ -82,56 +86,18 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const loadData = async () => {
     setIsLoading(true);
 
-    // Fetch questionnaires
-    let fetched = await fetchResponsesFromSupabase();
+    // Fetch questionnaires and clients from Supabase
+    const fetchedResponses = await fetchResponsesFromSupabase();
+    const fetchedClients = await fetchClientsFromSupabase();
+    const fetchedNotifs = await fetchNotificationsFromSupabase();
 
-    // If empty, inject sample records so the admin dashboard is fully interactive
-    if (fetched.length === 0) {
-      const sampleRecord: QuestionnaireResponseRecord = {
-        id: 'sample-1',
-        created_at: new Date().toISOString(),
-        company_name: 'Autopartes y Servicios Monterrey S.A.',
-        client_name: 'Ing. Carlos Mendoza',
-        contact_email: 'cmendoza@autopartesmty.com',
-        contact_phone: '+52 81 1234 5678',
-        data: sampleQuestionnaireData,
-        status: 'nuevo',
-        notes: 'Cliente muy interesado en módulo de inventarios y tickets de venta en impresora térmica.',
-      };
-      fetched = [sampleRecord];
-      saveLocalResponses(fetched);
-    }
-
-    setResponses(fetched);
-
-    // Fetch notifications
-    let notifs = await fetchNotificationsFromSupabase();
-    if (notifs.length === 0) {
-      notifs = [
-        {
-          id: 'notif-1',
-          title: '¡Bienvenido al Panel de Administración!',
-          message: 'El rol administrador está activo. Aquí recibirás todos los cuestionarios enviados por los clientes.',
-          created_at: new Date().toISOString(),
-          read: false,
-          type: 'system',
-        },
-        {
-          id: 'notif-2',
-          title: 'Nuevo Cuestionario Registrado',
-          message: 'Se ha registrado la solicitud de Autopartes y Servicios Monterrey S.A.',
-          created_at: new Date().toISOString(),
-          read: false,
-          type: 'submission',
-          response_id: 'sample-1',
-        },
-      ];
-      saveLocalNotifications(notifs);
-    }
-    setNotifications(notifs);
+    setResponses(fetchedResponses);
+    setClients(fetchedClients);
+    setNotifications(fetchedNotifs);
 
     setIsLoading(false);
   };
+
 
   if (!isOpen) return null;
 
@@ -240,111 +206,250 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
-      <div className="bg-white rounded-2xl max-w-6xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-        {/* Top Header Bar */}
-        <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold text-base text-white tracking-tight">Panel de Control Administrador</h2>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase">
-                  ADMIN ACTIVO
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Sesión iniciada como: <strong className="text-slate-200">{adminUser.name}</strong> ({adminUser.email})
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={loadData}
-              disabled={isLoading}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-              title="Recargar datos desde Supabase"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-bold rounded-xl text-xs border border-rose-500/30 transition-all cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" /> Cerrar Sesión
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer ml-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="bg-slate-100 px-6 py-2 border-b border-slate-200 flex items-center justify-between gap-2 overflow-x-auto shrink-0">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('responses')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                activeTab === 'responses'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Cuestionarios Recibidos</span>
-              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-extrabold">
-                {responses.length}
+    <>
+      <div className="fixed inset-0 z-50 bg-slate-100 flex flex-col w-full h-full min-h-screen overflow-hidden animate-fade-in">
+      {/* Top Header Bar (Full Width) */}
+      <div className="bg-slate-900 text-white px-4 sm:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 shrink-0 shadow-md">
+        <div className="flex items-center gap-3">
+          <img
+            src="https://mexicosignaturetours.com.mx/appdesignlogo.png"
+            alt="App Design Logo"
+            className="h-8 sm:h-9 w-auto object-contain shrink-0"
+          />
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-sm sm:text-base text-white tracking-tight">Panel de Control Administrador</h2>
+              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase">
+                ADMIN ACTIVO
               </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('metrics')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                activeTab === 'metrics'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span>Módulo de Métricas</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('notifications')}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
-                activeTab === 'notifications'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              <Bell className="w-4 h-4" />
-              <span>Notificaciones</span>
-              {unreadCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[11px] font-extrabold animate-pulse">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Sesión iniciada como: <strong className="text-slate-200">{adminUser.name}</strong> ({adminUser.email})
+            </p>
           </div>
         </div>
 
-        {/* Tab Contents */}
-        <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={isLoading}
+            className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+            title="Recargar datos desde Supabase"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-bold rounded-xl text-xs border border-rose-500/30 transition-all cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Cerrar Sesión
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition-all shadow-xs cursor-pointer ml-1"
+          >
+            <X className="w-4 h-4" /> Regresar al Inicio
+          </button>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="bg-white px-4 sm:px-8 py-2.5 border-b border-slate-200 flex items-center justify-between gap-2 overflow-x-auto shrink-0 shadow-2xs">
+        <div className="flex items-center gap-1 sm:gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('clients')}
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'clients'
+                ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Users className="w-4 h-4 text-blue-600" />
+            <span>Registro de Clientes</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-extrabold">
+              {clients.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('responses')}
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'responses'
+                ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <FileText className="w-4 h-4 text-blue-600" />
+            <span>Cuestionarios Recibidos</span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 text-[11px] font-extrabold">
+              {responses.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('metrics')}
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'metrics'
+                ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 text-blue-600" />
+            <span>Métricas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('notifications')}
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap relative ${
+              activeTab === 'notifications'
+                ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Bell className="w-4 h-4 text-blue-600" />
+            <span>Notificaciones</span>
+            {unreadCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black animate-pulse">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-semibold">
+          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span>Supabase Sincronizado</span>
+        </div>
+      </div>
+
+      {/* Full-Screen Tab Contents Container */}
+      <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-slate-50 w-full max-w-7xl mx-auto space-y-6">
+        {/* TAB 0: REGISTRO DE CLIENTES */}
+          {activeTab === 'clients' && (
+            <div className="space-y-5">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={clientSearchTerm}
+                    onChange={(e) => setClientSearchTerm(e.target.value)}
+                    placeholder="Buscar cliente por nombre, email o whatsapp..."
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div className="text-xs text-slate-500 font-bold">
+                  Total Clientes Registrados: <span className="text-blue-700">{clients.length}</span>
+                </div>
+              </div>
+
+              {clients.filter(
+                (c) =>
+                  c.full_name?.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+                  c.email?.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+                  c.whatsapp?.includes(clientSearchTerm)
+              ).length === 0 ? (
+                <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 space-y-3">
+                  <Users className="w-12 h-12 text-slate-300 mx-auto" />
+                  <h3 className="font-bold text-slate-800 text-sm">No hay clientes registrados aún</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Los clientes que se registren en el sistema para contestar su cuestionario aparecerán listados aquí.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-extrabold uppercase tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="px-4 py-3">Cliente</th>
+                          <th className="px-4 py-3">Correo Electrónico</th>
+                          <th className="px-4 py-3">WhatsApp</th>
+                          <th className="px-4 py-3">Fecha de Registro</th>
+                          <th className="px-4 py-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {clients
+                          .filter(
+                            (c) =>
+                              c.full_name?.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+                              c.email?.toLowerCase().includes(clientSearchTerm.toLowerCase()) ||
+                              c.whatsapp?.includes(clientSearchTerm)
+                          )
+                          .map((client) => {
+                            const clientResponse = responses.find(
+                              (r) =>
+                                r.contact_email?.toLowerCase() === client.email?.toLowerCase() ||
+                                r.client_name?.toLowerCase() === client.full_name?.toLowerCase()
+                            );
+                            return (
+                              <tr key={client.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center shrink-0">
+                                      {client.full_name ? client.full_name.charAt(0).toUpperCase() : 'C'}
+                                    </div>
+                                    <span className="font-bold text-slate-900">{client.full_name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  <div className="flex items-center gap-1.5">
+                                    <Mail className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>{client.email}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  <div className="flex items-center gap-1.5">
+                                    <Phone className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span>{client.whatsapp}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-slate-500">
+                                  {new Date(client.created_at).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {clientResponse ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedRecord(clientResponse);
+                                        setEditingNotes(clientResponse.notes || '');
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" /> Ver Cuestionario
+                                    </button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md">
+                                      Cuestionario pendiente
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* TAB 1: CUESTIONARIOS RECIBIDOS */}
           {activeTab === 'responses' && (
+
             <div className="space-y-5">
               {/* Filter and Search Controls */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
@@ -687,8 +792,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+        {/* Footer Bar */}
+        <div className="mt-auto px-6 py-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 rounded-2xl shadow-2xs">
           <span>
             Gestión de Negocio • Módulo Administrador • Supabase Sync Activo
           </span>
@@ -697,7 +802,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             onClick={onClose}
             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
           >
-            Cerrar Panel
+            Regresar al Inicio
           </button>
         </div>
       </div>
@@ -844,6 +949,6 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
