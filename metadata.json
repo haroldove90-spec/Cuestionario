@@ -1,0 +1,6 @@
+{
+  "name": "Cuestionario de Diseño de Software",
+  "description": "Formulario interactivo para recopilar los requerimientos, procesos y estructura para el diseño de sistemas de gestión personalizados.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
