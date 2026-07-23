@@ -106,6 +106,12 @@ export default function App() {
     showToast('Sesión de administrador cerrada.');
   };
 
+  const handleClientLogout = () => {
+    setCurrentClient(null);
+    localStorage.removeItem(CLIENT_SESSION_KEY);
+    showToast('Sesión de cliente cerrada.');
+  };
+
   const handleClientAuthSuccess = (client: ClientUser) => {
     setCurrentClient(client);
     try {
@@ -222,6 +228,8 @@ export default function App() {
           onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
           onContinueAsClient={() => setCurrentScreen('questionnaire')}
           onContinueAsAdmin={() => setIsAdminDashboardOpen(true)}
+          onClientLogout={handleClientLogout}
+          onAdminLogout={handleAdminLogout}
           currentClient={currentClient}
           adminUser={adminUser}
         />
@@ -259,11 +267,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 font-sans flex flex-col pb-24">
-      {/* Sticky Header: Logo + Admin Access ONLY */}
+      {/* Sticky Header: Logo + Client and Admin Access & Logout */}
       <Header
         onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
         onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
         adminUser={adminUser}
+        onAdminLogout={handleAdminLogout}
+        currentClient={currentClient}
+        onOpenClientAuth={() => setIsClientAuthOpen(true)}
+        onClientLogout={handleClientLogout}
         onGoHome={() => setCurrentScreen('home')}
       />
 
