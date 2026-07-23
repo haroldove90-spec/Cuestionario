@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { QuestionnaireData } from './types';
+import { QuestionnaireData, AdminUser } from './types';
 import { emptyQuestionnaire, sampleQuestionnaire } from './data/initialData';
 import { Header } from './components/Header';
 import { ProgressBar } from './components/ProgressBar';
@@ -11,11 +11,14 @@ import { Section5Reports } from './components/Section5Reports';
 import { Section6Tech } from './components/Section6Tech';
 import { SummaryModal } from './components/SummaryModal';
 import { SupabaseSqlModal } from './components/SupabaseSqlModal';
+import { AdminLoginModal } from './components/AdminLoginModal';
+import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { Toast } from './components/Toast';
 import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2 } from 'lucide-react';
 import { saveResponseToSupabase } from './lib/supabase';
 
 const STORAGE_KEY = 'management_system_questionnaire_draft_v1';
+const ADMIN_SESSION_KEY = 'management_system_admin_session_v1';
 
 const SECTION_TITLES = [
   '1. Generalidades y Objetivos',
@@ -32,7 +35,6 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        // If saved data had pre-loaded sample values from prior sessions, return empty questionnaire if company is Autopartes
         if (parsed.companyName === 'Autopartes y Servicios Monterrey') {
           return emptyQuestionnaire;
         }
@@ -44,12 +46,46 @@ export default function App() {
     return emptyQuestionnaire;
   });
 
+  // Admin user state initialized from session storage
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(() => {
+    try {
+      const stored = localStorage.getItem(ADMIN_SESSION_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Error reading admin session:', e);
+    }
+    return null;
+  });
+
   const [currentSection, setCurrentSection] = useState<number>(0);
   const [viewMode, setViewMode] = useState<'wizard' | 'full'>('wizard');
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(false);
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
   const [isSavingToSupabase, setIsSavingToSupabase] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleAdminLoginSuccess = (user: AdminUser) => {
+    setAdminUser(user);
+    try {
+      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
+    } catch (e) {
+      console.error('Error saving admin session:', e);
+    }
+    showToast(`¡Bienvenido ${user.name}! Sesión admin iniciada.`);
+    setIsAdminDashboardOpen(true);
+  };
+
+  const handleAdminLogout = () => {
+    setAdminUser(null);
+    localStorage.removeItem(ADMIN_SESSION_KEY);
+    setIsAdminDashboardOpen(false);
+    showToast('Sesión de administrador cerrada.');
+  };
+
 
   // Auto-save to localStorage on data change
   useEffect(() => {
@@ -150,10 +186,14 @@ export default function App() {
         onSave={handleSaveDraft}
         onOpenSummary={() => setIsSummaryOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+        onOpenAdminLogin={() => setIsAdminLoginOpen(true)}
+        onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
+        adminUser={adminUser}
         viewMode={viewMode}
         setViewMode={setViewMode}
         completionPercentage={completionPercentage}
       />
+
 
       {/* Progress Bar (Visible in wizard mode) */}
       {viewMode === 'wizard' && (
@@ -386,8 +426,28 @@ export default function App() {
         onSuccessToast={showToast}
       />
 
+      {/* Admin Login Modal */}
+      <AdminLoginModal
+        isOpen={isAdminLoginOpen}
+        onClose={() => setIsAdminLoginOpen(false)}
+        onLoginSuccess={handleAdminLoginSuccess}
+      />
+
+      {/* Admin Dashboard Modal */}
+      {adminUser && (
+        <AdminDashboardModal
+          isOpen={isAdminDashboardOpen}
+          onClose={() => setIsAdminDashboardOpen(false)}
+          adminUser={adminUser}
+          onLogout={handleAdminLogout}
+          onSuccessToast={showToast}
+          sampleQuestionnaireData={sampleQuestionnaire}
+        />
+      )}
+
       {/* Toast Notification */}
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+
     </div>
   );
 }

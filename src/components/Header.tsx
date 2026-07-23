@@ -1,6 +1,6 @@
 import React from 'react';
-import { ClipboardList, Sparkles, RotateCcw, Eye, Save, Building2, Database } from 'lucide-react';
-import { QuestionnaireData } from '../types';
+import { ClipboardList, Sparkles, RotateCcw, Eye, Save, Building2, Database, ShieldCheck, Lock } from 'lucide-react';
+import { QuestionnaireData, AdminUser } from '../types';
 
 interface HeaderProps {
   data: QuestionnaireData;
@@ -10,6 +10,9 @@ interface HeaderProps {
   onSave: () => void;
   onOpenSummary: () => void;
   onOpenSupabaseModal: () => void;
+  onOpenAdminLogin: () => void;
+  onOpenAdminDashboard: () => void;
+  adminUser: AdminUser | null;
   viewMode: 'wizard' | 'full';
   setViewMode: (mode: 'wizard' | 'full') => void;
   completionPercentage: number;
@@ -23,6 +26,9 @@ export const Header: React.FC<HeaderProps> = ({
   onSave,
   onOpenSummary,
   onOpenSupabaseModal,
+  onOpenAdminLogin,
+  onOpenAdminDashboard,
+  adminUser,
   viewMode,
   setViewMode,
   completionPercentage,
@@ -62,6 +68,29 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Admin Access Button */}
+            {adminUser ? (
+              <button
+                type="button"
+                onClick={onOpenAdminDashboard}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-extrabold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm border border-slate-700 transition-colors cursor-pointer"
+                title="Abrir Panel de Control Administrador"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Panel Admin</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onOpenAdminLogin}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+                title="Acceso Rol Administrador (Ver Cuestionarios, Métricas, Notificaciones)"
+              >
+                <Lock className="w-3.5 h-3.5 text-slate-600" />
+                <span>Acceso Admin</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onOpenSupabaseModal}
@@ -139,6 +168,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
         </div>
+
 
         {/* Client instruction callout banner matching design HTML */}
         <div className="bg-blue-600/5 border border-blue-100 rounded-2xl p-4 sm:p-5 flex gap-4 items-start shadow-2xs">

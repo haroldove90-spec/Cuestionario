@@ -66,3 +66,32 @@ export interface QuestionnaireData {
   section5: Section5Reports;
   section6: Section6Technical;
 }
+
+export interface QuestionnaireResponseRecord {
+  id: string;
+  created_at: string;
+  company_name: string;
+  client_name: string;
+  contact_email: string;
+  contact_phone: string;
+  data: QuestionnaireData;
+  status: 'nuevo' | 'enviado' | 'en_revision' | 'aprobado' | 'completado';
+  notes?: string;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  created_at: string;
+  read: boolean;
+  type: 'submission' | 'system' | 'status_change';
+  response_id?: string;
+}
+
+export interface AdminUser {
+  email: string;
+  role: 'admin';
+  name: string;
+}
+
