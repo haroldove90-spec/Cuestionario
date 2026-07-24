@@ -15,6 +15,7 @@ import { SupabaseSqlModal } from './components/SupabaseSqlModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { ClientAuthModal } from './components/ClientAuthModal';
+import { ClientNotificationsModal } from './components/ClientNotificationsModal';
 import { HomeScreen } from './components/HomeScreen';
 import { Toast } from './components/Toast';
 import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2, Home } from 'lucide-react';
@@ -83,6 +84,7 @@ export default function App() {
   const [isSummaryOpen, setIsSummaryOpen] = useState<boolean>(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
   const [isClientAuthOpen, setIsClientAuthOpen] = useState<boolean>(false);
+  const [isClientNotifsOpen, setIsClientNotifsOpen] = useState<boolean>(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
   const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
@@ -266,6 +268,15 @@ export default function App() {
           />
         )}
 
+        {/* Client Notifications Modal */}
+        {currentClient && (
+          <ClientNotificationsModal
+            isOpen={isClientNotifsOpen}
+            onClose={() => setIsClientNotifsOpen(false)}
+            currentClient={currentClient}
+          />
+        )}
+
         <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
       </>
     );
@@ -282,6 +293,7 @@ export default function App() {
         currentClient={currentClient}
         onOpenClientAuth={() => setIsClientAuthOpen(true)}
         onClientLogout={handleClientLogout}
+        onOpenClientNotifs={() => setIsClientNotifsOpen(true)}
         onGoHome={() => setCurrentScreen('home')}
       />
 
@@ -552,6 +564,15 @@ export default function App() {
           onLogout={handleAdminLogout}
           onSuccessToast={showToast}
           sampleQuestionnaireData={sampleQuestionnaire}
+        />
+      )}
+
+      {/* Client Notifications Modal */}
+      {currentClient && (
+        <ClientNotificationsModal
+          isOpen={isClientNotifsOpen}
+          onClose={() => setIsClientNotifsOpen(false)}
+          currentClient={currentClient}
         />
       )}
 

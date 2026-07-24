@@ -36,6 +36,10 @@ import {
   ShieldCheck,
   UserCheck,
   Users,
+  Copy,
+  Code,
+  Save,
+  RotateCcw,
 } from 'lucide-react';
 import {
   fetchResponsesFromSupabase,
@@ -46,6 +50,9 @@ import {
   saveLocalResponses,
   saveLocalNotifications,
   fetchClientsFromSupabase,
+  updateQuestionnaireRecordInSupabase,
+  createClientNotificationInSupabase,
+  SUPABASE_SQL_SCRIPT,
 } from '../lib/supabase';
 import { QuestionnaireResponseRecord, AppNotification, AdminUser, QuestionnaireData, ClientUser } from '../types';
 
@@ -76,9 +83,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
 
-  // Selected response for inspection
+  // Selected response for inspection and editing
   const [selectedRecord, setSelectedRecord] = useState<QuestionnaireResponseRecord | null>(null);
   const [editingNotes, setEditingNotes] = useState<string>('');
+  
+  // Field Editing State
+  const [isEditingFields, setIsEditingFields] = useState<boolean>(false);
+  const [editCompany, setEditCompany] = useState<string>('');
+  const [editClientName, setEditClientName] = useState<string>('');
+  const [editEmail, setEditEmail] = useState<string>('');
+  const [editPhone, setEditPhone] = useState<string>('');
+  const [editDailySteps, setEditDailySteps] = useState<string>('');
+
+  // SQL Script Modal State
+  const [showSqlModal, setShowSqlModal] = useState<boolean>(false);
+  const [copiedSql, setCopiedSql] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -101,7 +120,6 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setIsLoading(false);
   };
 
-
   if (!isOpen) return null;
 
   // Filtered responses list
@@ -117,10 +135,45 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     return matchesSearch && matchesStatus;
   });
 
+  // Abrir e Inspeccionar Cuestionario con Cambio Automático de Estatus a 'en_revision'
+  const handleInspectRecord = async (rec: QuestionnaireResponseRecord) => {
+    setIsEditingFields(false);
+    setEditingNotes(rec.notes || '');
+    setEditCompany(rec.company_name || '');
+    setEditClientName(rec.client_name || '');
+    setEditEmail(rec.contact_email || '');
+    setEditPhone(rec.contact_phone || '');
+    setEditDailySteps(rec.data?.section3?.dailyProcessSteps || '');
+
+    if (rec.status === 'nuevo') {
+      const updatedRec: QuestionnaireResponseRecord = { ...rec, status: 'en_revision' };
+      setSelectedRecord(updatedRec);
+
+      const updatedList = responses.map((r) => (r.id === rec.id ? updatedRec : r));
+      setResponses(updatedList);
+      saveLocalResponses(updatedList);
+
+      await updateResponseStatusInSupabase(rec.id, 'en_revision');
+      
+      if (rec.contact_email) {
+        await createClientNotificationInSupabase(
+          rec.contact_email,
+          '¡Cuestionario en Revisión!',
+          `El Administrador ha leído y verificado tu cuestionario para "${rec.company_name}". El estatus ha sido actualizado automáticamente a: EN REVISIÓN.`,
+          rec.id
+        );
+      }
+      onSuccessToast('Cuestionario marcado como "En Revisión" y notificación enviada al cliente.');
+    } else {
+      setSelectedRecord(rec);
+    }
+  };
+
   const handleUpdateStatus = async (
     id: string,
     newStatus: QuestionnaireResponseRecord['status']
   ) => {
+    const target = responses.find((r) => r.id === id);
     const updated = responses.map((r) =>
       r.id === id ? { ...r, status: newStatus } : r
     );
@@ -132,6 +185,22 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
 
     await updateResponseStatusInSupabase(id, newStatus);
+
+    if (target && target.contact_email) {
+      const labels: Record<string, string> = {
+        nuevo: 'NUEVO',
+        en_revision: 'EN REVISIÓN',
+        aprobado: 'APROBADO',
+        completado: 'COMPLETADO',
+      };
+      await createClientNotificationInSupabase(
+        target.contact_email,
+        'Estatus de Cuestionario Actualizado',
+        `El Administrador ha actualizado el estatus de tu cuestionario (${target.company_name}) a: ${labels[newStatus] || newStatus.toUpperCase()}.`,
+        id
+      );
+    }
+
     onSuccessToast(`Estado actualizado a: ${newStatus.toUpperCase()}`);
   };
 
@@ -146,6 +215,47 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
     await updateResponseStatusInSupabase(selectedRecord.id, selectedRecord.status, editingNotes);
     onSuccessToast('Notas internas guardadas correctamente.');
+  };
+
+  const handleSaveQuestionnaireEdits = async () => {
+    if (!selectedRecord) return;
+
+    const updatedData: QuestionnaireData = {
+      ...selectedRecord.data,
+      companyName: editCompany,
+      clientName: editClientName,
+      contactEmail: editEmail,
+      contactPhone: editPhone,
+      section3: {
+        ...selectedRecord.data?.section3,
+        dailyProcessSteps: editDailySteps,
+      },
+    };
+
+    const updatedRecord: QuestionnaireResponseRecord = {
+      ...selectedRecord,
+      company_name: editCompany,
+      client_name: editClientName,
+      contact_email: editEmail,
+      contact_phone: editPhone,
+      data: updatedData,
+    };
+
+    const updatedResponses = responses.map((r) => (r.id === selectedRecord.id ? updatedRecord : r));
+    setResponses(updatedResponses);
+    saveLocalResponses(updatedResponses);
+    setSelectedRecord(updatedRecord);
+    setIsEditingFields(false);
+
+    await updateQuestionnaireRecordInSupabase(selectedRecord.id, {
+      company_name: editCompany,
+      client_name: editClientName,
+      contact_email: editEmail,
+      contact_phone: editPhone,
+      data: updatedData,
+    });
+
+    onSuccessToast('Cuestionario editado y guardado en Supabase exitosamente.');
   };
 
   const handleDeleteResponse = async (id: string) => {
@@ -232,6 +342,15 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSqlModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 font-bold rounded-xl text-xs border border-emerald-800 transition-colors cursor-pointer"
+            title="Ver código SQL de Supabase"
+          >
+            <Code className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Script SQL</span>
+          </button>
           <button
             type="button"
             onClick={loadData}
@@ -421,10 +540,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                   {clientResponse ? (
                                     <button
                                       type="button"
-                                      onClick={() => {
-                                        setSelectedRecord(clientResponse);
-                                        setEditingNotes(clientResponse.notes || '');
-                                      }}
+                                      onClick={() => handleInspectRecord(clientResponse)}
                                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
                                     >
                                       <Eye className="w-3.5 h-3.5" /> Ver Cuestionario
@@ -547,10 +663,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedRecord(rec);
-                            setEditingNotes(rec.notes || '');
-                          }}
+                          onClick={() => handleInspectRecord(rec)}
                           className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
                         >
                           <Eye className="w-4 h-4" /> Inspeccionar
@@ -814,23 +927,109 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
               <div className="space-y-0.5">
                 <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider">
-                  Detalle de Cuestionario
+                  Detalle e Inspección de Cuestionario
                 </span>
-                <h3 className="font-bold text-base text-white truncate max-w-md">
+                <h3 className="font-bold text-base text-white truncate max-w-xs sm:max-w-md">
                   {selectedRecord.company_name}
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedRecord(null)}
-                className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingFields(!isEditingFields)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-300 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/50 rounded-xl transition-colors cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{isEditingFields ? 'Ver Vista Normal' : 'Editar Datos'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecord(null)}
+                  className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Drawer Content */}
             <div className="p-6 overflow-y-auto space-y-6 text-slate-800 text-xs sm:text-sm">
+              {/* Formulario de Edición Directa del Cuestionario */}
+              {isEditingFields ? (
+                <div className="p-4 bg-amber-50/90 rounded-2xl border border-amber-200 space-y-3.5 animate-fade-in shadow-2xs">
+                  <div className="flex items-center justify-between border-b border-amber-200/80 pb-2">
+                    <h4 className="font-bold text-amber-950 text-xs uppercase flex items-center gap-1.5">
+                      <Edit3 className="w-4 h-4 text-amber-600" /> Modo Edición de Cuestionario
+                    </h4>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingFields(false)}
+                      className="text-xs text-slate-500 hover:text-slate-800 font-medium"
+                    >
+                      Cancelar Edición
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Empresa</label>
+                      <input
+                        type="text"
+                        value={editCompany}
+                        onChange={(e) => setEditCompany(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Nombre del Cliente / Contacto</label>
+                      <input
+                        type="text"
+                        value={editClientName}
+                        onChange={(e) => setEditClientName(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Correo Electrónico</label>
+                      <input
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Teléfono / WhatsApp</label>
+                      <input
+                        type="text"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block font-bold text-slate-700 mb-1">Pasos del Proceso Diario (Sección 3)</label>
+                      <textarea
+                        rows={3}
+                        value={editDailySteps}
+                        onChange={(e) => setEditDailySteps(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 text-xs font-medium"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleSaveQuestionnaireEdits}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <Save className="w-4 h-4" /> Guardar Cambios en Supabase
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {/* Status and Notes editing */}
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
@@ -964,6 +1163,60 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cerrar Vista
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* SQL Script Modal */}
+      {showSqlModal && (
+        <div className="fixed inset-0 z-70 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-slate-900 text-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-800 flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-sm text-white">Script SQL Completo para Supabase</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSqlModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4">
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Ejecuta este código en el <strong>SQL Editor</strong> de tu proyecto de Supabase para crear todas las tablas, buckets de almacenamiento de documentos, columnas de notificaciones de clientes y administradores, y permisos necesarios.
+              </p>
+
+              <div className="relative">
+                <pre className="bg-slate-950 p-4 rounded-xl text-xs font-mono text-emerald-300 border border-slate-800 overflow-x-auto max-h-96 whitespace-pre-wrap select-all">
+                  {SUPABASE_SQL_SCRIPT}
+                </pre>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(SUPABASE_SQL_SCRIPT);
+                    setCopiedSql(true);
+                    setTimeout(() => setCopiedSql(false), 2000);
+                  }}
+                  className="absolute top-3 right-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedSql ? '¡Copiado!' : 'Copiar SQL'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-3 bg-slate-950 border-t border-slate-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowSqlModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cerrar
               </button>
             </div>
           </div>

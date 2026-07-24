@@ -56,8 +56,14 @@ CREATE TABLE IF NOT EXISTS public.app_notifications (
     message TEXT NOT NULL,
     read BOOLEAN DEFAULT false,
     type TEXT DEFAULT 'submission',
+    recipient_role TEXT DEFAULT 'admin',
+    client_email TEXT,
     response_id UUID REFERENCES public.questionnaire_responses(id) ON DELETE CASCADE
 );
+
+-- Alteraciones para agregar columnas si la tabla ya existía
+ALTER TABLE public.app_notifications ADD COLUMN IF NOT EXISTS recipient_role TEXT DEFAULT 'admin';
+ALTER TABLE public.app_notifications ADD COLUMN IF NOT EXISTS client_email TEXT;
 
 -- 4. Tabla de Usuarios Administradores
 CREATE TABLE IF NOT EXISTS public.admin_users (
@@ -235,6 +241,34 @@ export async function registerClientInSupabase(
     const createdClient = data && data[0] ? (data[0] as ClientUser) : newClientObj;
     const localClients = getLocalClients();
     saveLocalClients([...localClients.filter((c) => c.email !== cleanEmail), createdClient]);
+
+    // Crear notificación para el Admin sobre nuevo registro de usuario
+    try {
+      const adminNotif: AppNotification = {
+        id: 'notif-user-' + Date.now(),
+        title: '¡Nuevo Usuario Registrado!',
+        message: `El cliente "${createdClient.full_name}" (${createdClient.company_name || 'Sin Empresa'}) se ha registrado con el correo ${createdClient.email}.`,
+        created_at: new Date().toISOString(),
+        read: false,
+        type: 'user_registered',
+        recipient_role: 'admin',
+      };
+      const localNotifs = getLocalNotificationsFallback();
+      saveLocalNotifications([adminNotif, ...localNotifs]);
+
+      await supabase.from('app_notifications').insert([
+        {
+          title: adminNotif.title,
+          message: adminNotif.message,
+          type: 'user_registered',
+          recipient_role: 'admin',
+          read: false,
+        },
+      ]);
+    } catch (notifErr) {
+      console.warn('No se pudo crear notificación de registro para admin:', notifErr);
+    }
+
     return { success: true, client: createdClient };
   } catch (err: any) {
     console.warn('Excepción en registro de cliente (activando fallback local por red/fetch):', err);
@@ -359,11 +393,25 @@ export async function saveResponseToSupabase(
 
     // Crear notificación para el admin
     try {
+      const adminNotif: AppNotification = {
+        id: 'notif-quest-' + Date.now(),
+        title: '¡Nuevo Cuestionario Recibido!',
+        message: `El cliente "${data.clientName || 'Cliente'}" (${data.companyName || 'Sin empresa'}) ha enviado un nuevo cuestionario para su verificación.`,
+        created_at: new Date().toISOString(),
+        read: false,
+        type: 'submission',
+        recipient_role: 'admin',
+        response_id: insertedId,
+      };
+      const localNotifs = getLocalNotificationsFallback();
+      saveLocalNotifications([adminNotif, ...localNotifs]);
+
       await supabase.from('app_notifications').insert([
         {
-          title: '¡Nuevo Cuestionario Registrado!',
-          message: `El cliente "${data.clientName || 'Cliente'}" (${data.companyName || 'Sin empresa'}) ha enviado su cuestionario.`,
+          title: adminNotif.title,
+          message: adminNotif.message,
           type: 'submission',
+          recipient_role: 'admin',
           response_id: insertedId,
           read: false,
         },
@@ -506,7 +554,136 @@ export async function markNotificationReadInSupabase(id: string) {
   try {
     await supabase.from('app_notifications').update({ read: true }).eq('id', id);
   } catch (e) {
-    console.error('Error marking notification read:', e);
+    console.error('Error marking notification as read in Supabase:', e);
+  }
+}
+
+// Helper para actualizar todos los datos o campos de un cuestionario
+export async function updateQuestionnaireRecordInSupabase(
+  id: string,
+  updatedFields: Partial<QuestionnaireResponseRecord>
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('questionnaire_responses')
+      .update(updatedFields)
+      .eq('id', id);
+
+    if (error) {
+      console.warn('Error en Supabase update:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Excepción actualizando cuestionario:', err);
+    return { success: false, error: err.message || 'Error de red' };
+  }
+}
+
+// Helper para crear notificaciones dirigidas al Cliente
+export async function createClientNotificationInSupabase(
+  clientEmail: string,
+  title: string,
+  message: string,
+  responseId?: string
+) {
+  if (!clientEmail) return;
+  const cleanEmail = clientEmail.trim().toLowerCase();
+
+  const notifObj: AppNotification = {
+    id: 'notif-client-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+    title,
+    message,
+    created_at: new Date().toISOString(),
+    read: false,
+    type: 'status_change',
+    recipient_role: 'client',
+    client_email: cleanEmail,
+    response_id: responseId,
+  };
+
+  // Guardar en almacenamiento local para el cliente
+  try {
+    const localNotifs = getLocalClientNotifications(cleanEmail);
+    saveLocalClientNotifications(cleanEmail, [notifObj, ...localNotifs]);
+  } catch (e) {
+    console.error('Error guardando notificación local de cliente:', e);
+  }
+
+  // Guardar en Supabase
+  try {
+    await supabase.from('app_notifications').insert([
+      {
+        title,
+        message,
+        type: 'status_change',
+        recipient_role: 'client',
+        client_email: cleanEmail,
+        response_id: responseId || null,
+        read: false,
+      },
+    ]);
+  } catch (err) {
+    console.warn('Advertencia insertando notificación para cliente en Supabase:', err);
+  }
+}
+
+// Helper para obtener notificaciones de un cliente específico
+export async function fetchClientNotificationsFromSupabase(
+  clientEmail: string
+): Promise<AppNotification[]> {
+  if (!clientEmail) return [];
+  const cleanEmail = clientEmail.trim().toLowerCase();
+
+  try {
+    const { data, error } = await supabase
+      .from('app_notifications')
+      .select('*')
+      .eq('recipient_role', 'client')
+      .eq('client_email', cleanEmail)
+      .order('created_at', { ascending: false });
+
+    if (error || !data || data.length === 0) {
+      return getLocalClientNotifications(cleanEmail);
+    }
+    return data as AppNotification[];
+  } catch (e) {
+    return getLocalClientNotifications(cleanEmail);
+  }
+}
+
+export function getLocalClientNotifications(clientEmail: string): AppNotification[] {
+  try {
+    const key = `app_client_notifications_${clientEmail.trim().toLowerCase()}`;
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Error leyendo notificaciones locales de cliente:', e);
+  }
+  return [];
+}
+
+export function saveLocalClientNotifications(clientEmail: string, notifications: AppNotification[]) {
+  try {
+    const key = `app_client_notifications_${clientEmail.trim().toLowerCase()}`;
+    localStorage.setItem(key, JSON.stringify(notifications));
+  } catch (e) {
+    console.error('Error guardando notificaciones locales de cliente:', e);
+  }
+}
+
+export async function markClientNotificationReadInSupabase(id: string, clientEmail: string) {
+  const cleanEmail = clientEmail.trim().toLowerCase();
+  try {
+    const local = getLocalClientNotifications(cleanEmail);
+    const updated = local.map((n) => (n.id === id ? { ...n, read: true } : n));
+    saveLocalClientNotifications(cleanEmail, updated);
+
+    await supabase.from('app_notifications').update({ read: true }).eq('id', id);
+  } catch (e) {
+    console.error('Error marcando notificación de cliente como leída:', e);
   }
 }
 

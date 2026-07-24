@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, User, UserCheck, LogOut } from 'lucide-react';
+import { ShieldCheck, Lock, User, UserCheck, LogOut, Bell } from 'lucide-react';
 import { AdminUser, ClientUser } from '../types';
 import { Logo } from './Logo';
 
@@ -11,6 +11,7 @@ interface HeaderProps {
   currentClient: ClientUser | null;
   onOpenClientAuth: () => void;
   onClientLogout: () => void;
+  onOpenClientNotifs?: () => void;
   onGoHome?: () => void;
 }
 
@@ -22,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentClient,
   onOpenClientAuth,
   onClientLogout,
+  onOpenClientNotifs,
   onGoHome,
 }) => {
   return (
@@ -48,6 +50,20 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden md:inline text-slate-500 font-normal">Cliente:</span>
                 <span className="truncate max-w-[120px] sm:max-w-[160px]">{currentClient.full_name}</span>
               </div>
+
+              {onOpenClientNotifs && (
+                <button
+                  type="button"
+                  onClick={onOpenClientNotifs}
+                  className="p-1.5 text-blue-700 bg-white hover:bg-blue-100 border border-blue-200 rounded-lg transition-all cursor-pointer shadow-2xs relative"
+                  title="Ver Notificaciones de mi Cuestionario"
+                >
+                  <Bell className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-600 rounded-full animate-ping" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-600 rounded-full" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onClientLogout}

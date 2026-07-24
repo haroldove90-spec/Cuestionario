@@ -95,7 +95,9 @@ export interface AppNotification {
   message: string;
   created_at: string;
   read: boolean;
-  type: 'submission' | 'system' | 'status_change';
+  type: 'submission' | 'system' | 'status_change' | 'user_registered';
+  recipient_role?: 'admin' | 'client';
+  client_email?: string;
   response_id?: string;
 }
 
