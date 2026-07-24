@@ -80,6 +80,7 @@ export interface QuestionnaireData {
 export interface QuestionnaireResponseRecord {
   id: string;
   created_at: string;
+  client_id?: string;
   company_name: string;
   client_name: string;
   contact_email: string;

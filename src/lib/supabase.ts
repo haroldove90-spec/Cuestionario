@@ -393,66 +393,130 @@ function saveLocalClients(clients: ClientUser[]) {
   }
 }
 
-function sanitizeDataPayloadForSaving(data: QuestionnaireData): QuestionnaireData {
-  if (!data) return data;
+// Helper para obtener el borrador / respuesta del cliente desde Supabase
+export async function fetchClientResponseFromSupabase(
+  clientId?: string,
+  email?: string
+): Promise<QuestionnaireData | null> {
   try {
-    const copy: QuestionnaireData = JSON.parse(JSON.stringify(data));
-    if (copy.section3?.attachedFiles && Array.isArray(copy.section3.attachedFiles)) {
-      copy.section3.attachedFiles = copy.section3.attachedFiles.map((file) => {
-        // Evitar que DataURLs masivas trunquen o crasheen el envio a Supabase o localStorage
-        if (file.url && file.url.startsWith('data:') && file.url.length > 20000) {
-          return {
-            ...file,
-            url: '',
-            note: 'Archivo PDF/documento. Por favor vuelve a adjuntarlo con el almacenamiento de Supabase habilitado.',
-          };
-        }
-        return file;
-      });
+    const cleanEmail = email?.trim().toLowerCase();
+    if (!clientId && !cleanEmail) return null;
+
+    let query = supabase.from('questionnaire_responses').select('*');
+    if (clientId) {
+      query = query.eq('client_id', clientId);
+    } else if (cleanEmail) {
+      query = query.eq('contact_email', cleanEmail);
     }
-    return copy;
-  } catch (e) {
-    return data;
+
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
+
+    if (!error && data && data.length > 0) {
+      return data[0].data as QuestionnaireData;
+    }
+
+    // Fallback local
+    const localResponses = getLocalResponsesFallback();
+    const found = localResponses.find(
+      (r) =>
+        (clientId && r.client_id === clientId) ||
+        (cleanEmail && r.contact_email?.toLowerCase() === cleanEmail)
+    );
+    if (found && found.data) {
+      return found.data;
+    }
+  } catch (err) {
+    console.warn('Error fetching client response from Supabase:', err);
   }
+  return null;
 }
 
-// Helper para guardar respuesta / borrador en Supabase
+// Helper para guardar respuesta / borrador en Supabase (actualiza si existe o crea nuevo)
 export async function saveResponseToSupabase(
   data: QuestionnaireData,
   clientId?: string
 ): Promise<{ success: boolean; result?: any; isLocalFallback?: boolean; error?: string }> {
-  const cleanData = sanitizeDataPayloadForSaving(data);
+  // Guardar datos completos con todos los archivos adjuntos y URLs de Supabase Storage intactos
+  const cleanData = data;
+  const cleanEmail = cleanData.contactEmail?.trim().toLowerCase() || '';
+  const company = cleanData.companyName || 'Empresa Sin Nombre';
+  const clientName = cleanData.clientName || 'Cliente No Especificado';
+  const phone = cleanData.contactPhone || '';
 
   try {
-    const { data: result, error } = await supabase
-      .from('questionnaire_responses')
-      .insert([
-        {
-          client_id: clientId || null,
-          company_name: cleanData.companyName || 'Empresa Sin Nombre',
-          client_name: cleanData.clientName || 'Cliente No Especificado',
-          contact_email: cleanData.contactEmail || '',
-          contact_phone: cleanData.contactPhone || '',
-          data: cleanData,
-          status: 'nuevo',
-        },
-      ])
-      .select();
+    // Verificar si ya existe una respuesta para este cliente o correo
+    let existingId: string | null = null;
+    if (clientId || cleanEmail) {
+      let checkQuery = supabase.from('questionnaire_responses').select('id');
+      if (clientId) {
+        checkQuery = checkQuery.eq('client_id', clientId);
+      } else if (cleanEmail) {
+        checkQuery = checkQuery.eq('contact_email', cleanEmail);
+      }
 
-    if (error) {
-      console.warn('Supabase insert warning, fallback to local storage:', error.message);
-      saveLocalDraftFallback(cleanData, clientId);
-      return { success: true, isLocalFallback: true, error: error.message };
+      const { data: existingRows } = await checkQuery.order('created_at', { ascending: false }).limit(1);
+      if (existingRows && existingRows.length > 0) {
+        existingId = existingRows[0].id;
+      }
     }
 
-    const insertedId = result && result[0] ? result[0].id : null;
+    let resultRecord: any = null;
+
+    if (existingId) {
+      // Actualizar registro existente
+      const { data: updateRes, error: updateErr } = await supabase
+        .from('questionnaire_responses')
+        .update({
+          company_name: company,
+          client_name: clientName,
+          contact_email: cleanEmail,
+          contact_phone: phone,
+          data: cleanData,
+        })
+        .eq('id', existingId)
+        .select();
+
+      if (updateErr) {
+        console.warn('Error al actualizar borrador en Supabase, aplicando fallback local:', updateErr.message);
+        saveLocalDraftFallback(cleanData, clientId);
+        return { success: true, isLocalFallback: true, error: updateErr.message };
+      }
+      resultRecord = updateRes ? updateRes[0] : null;
+    } else {
+      // Insertar nuevo registro
+      const { data: insertRes, error: insertErr } = await supabase
+        .from('questionnaire_responses')
+        .insert([
+          {
+            client_id: clientId || null,
+            company_name: company,
+            client_name: clientName,
+            contact_email: cleanEmail,
+            contact_phone: phone,
+            data: cleanData,
+            status: 'nuevo',
+          },
+        ])
+        .select();
+
+      if (insertErr) {
+        console.warn('Error al insertar borrador en Supabase, aplicando fallback local:', insertErr.message);
+        saveLocalDraftFallback(cleanData, clientId);
+        return { success: true, isLocalFallback: true, error: insertErr.message };
+      }
+      resultRecord = insertRes ? insertRes[0] : null;
+    }
+
+    saveLocalDraftFallback(cleanData, clientId);
+
+    const insertedId = resultRecord?.id || existingId;
 
     // Crear notificación para el admin
     try {
       const adminNotif: AppNotification = {
         id: 'notif-quest-' + Date.now(),
-        title: '¡Nuevo Cuestionario Recibido!',
-        message: `El cliente "${cleanData.clientName || 'Cliente'}" (${cleanData.companyName || 'Sin empresa'}) ha enviado un nuevo cuestionario para su verificación.`,
+        title: '¡Cuestionario Actualizado / Recibido!',
+        message: `El cliente "${clientName}" (${company}) ha guardado/enviado su cuestionario con archivos adjuntos.`,
         created_at: new Date().toISOString(),
         read: false,
         type: 'submission',
@@ -476,7 +540,7 @@ export async function saveResponseToSupabase(
       console.warn('No se pudo crear notificación:', notifErr);
     }
 
-    return { success: true, result: result ? result[0] : null };
+    return { success: true, result: resultRecord };
   } catch (err: any) {
     console.error('Excepción Supabase:', err);
     saveLocalDraftFallback(data, clientId);

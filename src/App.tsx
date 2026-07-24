@@ -19,7 +19,7 @@ import { ClientNotificationsModal } from './components/ClientNotificationsModal'
 import { HomeScreen } from './components/HomeScreen';
 import { Toast } from './components/Toast';
 import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2, Home } from 'lucide-react';
-import { saveResponseToSupabase } from './lib/supabase';
+import { saveResponseToSupabase, fetchClientResponseFromSupabase } from './lib/supabase';
 
 const STORAGE_KEY = 'management_system_questionnaire_draft_v1';
 const ADMIN_SESSION_KEY = 'management_system_admin_session_v1';
@@ -120,7 +120,7 @@ export default function App() {
     showToast('Sesión de cliente cerrada.');
   };
 
-  const handleClientAuthSuccess = (client: ClientUser) => {
+  const handleClientAuthSuccess = async (client: ClientUser) => {
     setCurrentClient(client);
     try {
       localStorage.setItem(CLIENT_SESSION_KEY, JSON.stringify(client));
@@ -128,17 +128,35 @@ export default function App() {
       console.error('Error saving client session:', e);
     }
 
-    // Prefill form with client details if empty
-    setData((prev) => ({
-      ...prev,
-      clientName: prev.clientName || client.full_name,
-      contactEmail: prev.contactEmail || client.email,
-      contactPhone: prev.contactPhone || client.whatsapp,
-    }));
+    // Load existing draft from Supabase if available
+    const existingData = await fetchClientResponseFromSupabase(client.id, client.email);
+    if (existingData) {
+      setData(existingData);
+      showToast(`¡Bienvenido ${client.full_name}! Cuestionario y borrador recuperados de Supabase.`);
+    } else {
+      // Prefill form with client details if empty
+      setData((prev) => ({
+        ...prev,
+        clientName: prev.clientName || client.full_name,
+        contactEmail: prev.contactEmail || client.email,
+        contactPhone: prev.contactPhone || client.whatsapp,
+      }));
+      showToast(`¡Bienvenido ${client.full_name}! Cuestionario activado.`);
+    }
 
-    showToast(`¡Bienvenido ${client.full_name}! Cuestionario activado.`);
     setCurrentScreen('questionnaire');
   };
+
+  // Cargar borrador guardado en Supabase al restaurar sesión de cliente al iniciar
+  useEffect(() => {
+    if (currentClient) {
+      fetchClientResponseFromSupabase(currentClient.id, currentClient.email).then((remoteData) => {
+        if (remoteData) {
+          setData(remoteData);
+        }
+      });
+    }
+  }, [currentClient?.id]);
 
   // Auto-save to localStorage on data change
   useEffect(() => {
