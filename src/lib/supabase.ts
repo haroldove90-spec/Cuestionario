@@ -101,45 +101,66 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role, postgres;
 
 -- 6. Bucket de Supabase Storage para Documentos de Cuestionarios (PDF, Excel, Word, Imágenes, Video)
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('questionnaire_files', 'questionnaire_files', true)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('questionnaire_files', 'questionnaire_files', true, 52428800, NULL)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies WHERE policyname = 'Public Access on questionnaire_files'
-    ) THEN
-        CREATE POLICY "Public Access on questionnaire_files" ON storage.objects
-        FOR ALL USING (bucket_id = 'questionnaire_files') WITH CHECK (bucket_id = 'questionnaire_files');
-    END IF;
-END $$;
+-- Permisos explícitos e irrestrictos en storage.objects para el bucket questionnaire_files
+DROP POLICY IF EXISTS "Public Storage Select" ON storage.objects;
+DROP POLICY IF EXISTS "Public Storage Insert" ON storage.objects;
+DROP POLICY IF EXISTS "Public Storage Update" ON storage.objects;
+DROP POLICY IF EXISTS "Public Storage Delete" ON storage.objects;
+DROP POLICY IF EXISTS "Public Access on questionnaire_files" ON storage.objects;
+DROP POLICY IF EXISTS "Allow All Storage Operations" ON storage.objects;
+
+CREATE POLICY "Allow All Storage Operations" ON storage.objects
+FOR ALL TO public, anon, authenticated, service_role
+USING (bucket_id = 'questionnaire_files')
+WITH CHECK (bucket_id = 'questionnaire_files');
+
+-- Conceder permisos de ejecución y acceso al esquema de Storage
+GRANT ALL ON ALL TABLES IN SCHEMA storage TO anon, authenticated, service_role, postgres;
 `;
 
-// Helper para subir archivos directamente a Supabase Storage (con fallback local a DataURL)
+// Helper para subir archivos directamente a Supabase Storage (PDF, Excel, Word, Imágenes, Video)
 export async function uploadFileToSupabaseStorage(
   file: File
 ): Promise<{ success: boolean; url: string; fileName: string; fileSize: number; fileType: string; error?: string }> {
   try {
     const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const filePath = `docs/${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${cleanFileName}`;
+    const contentType = file.type || (cleanFileName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
 
     const { data, error } = await supabase.storage
       .from('questionnaire_files')
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: true,
+        contentType: contentType,
       });
 
     if (error) {
-      console.warn('Carga en Supabase Storage falló (activando fallback DataURL):', error.message);
+      console.warn('Carga en Supabase Storage falló:', error.message);
+
+      // Si el archivo supera los 500 KB (como PDFs), no generar DataURL gigante que cause fallo de payload
+      if (file.size > 500 * 1024) {
+        return {
+          success: false,
+          url: '',
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: contentType,
+          error: `No se pudo subir "${file.name}" a Supabase Storage: ${error.message}. Por favor ejecuta el Script SQL en Supabase para crear el bucket "questionnaire_files" y dar permisos.`,
+        };
+      }
+
       const dataUrl = await fileToDataURL(file);
       return {
         success: true,
         url: dataUrl,
         fileName: file.name,
         fileSize: file.size,
-        fileType: file.type || 'application/octet-stream',
+        fileType: contentType,
       };
     }
 
@@ -152,10 +173,20 @@ export async function uploadFileToSupabaseStorage(
       url: publicUrlData.publicUrl,
       fileName: file.name,
       fileSize: file.size,
-      fileType: file.type || 'application/octet-stream',
+      fileType: contentType,
     };
   } catch (err: any) {
-    console.warn('Excepción en carga de archivo (activando fallback DataURL):', err);
+    console.warn('Excepción en carga de archivo:', err);
+    if (file.size > 500 * 1024) {
+      return {
+        success: false,
+        url: '',
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type || 'application/pdf',
+        error: `Error al procesar "${file.name}": ${err.message || 'Error de red'}. Revisa los permisos de Supabase Storage.`,
+      };
+    }
     try {
       const dataUrl = await fileToDataURL(file);
       return {
@@ -163,7 +194,7 @@ export async function uploadFileToSupabaseStorage(
         url: dataUrl,
         fileName: file.name,
         fileSize: file.size,
-        fileType: file.type || 'application/octet-stream',
+        fileType: file.type || 'application/pdf',
       };
     } catch (e: any) {
       return {
@@ -362,22 +393,47 @@ function saveLocalClients(clients: ClientUser[]) {
   }
 }
 
+function sanitizeDataPayloadForSaving(data: QuestionnaireData): QuestionnaireData {
+  if (!data) return data;
+  try {
+    const copy: QuestionnaireData = JSON.parse(JSON.stringify(data));
+    if (copy.section3?.attachedFiles && Array.isArray(copy.section3.attachedFiles)) {
+      copy.section3.attachedFiles = copy.section3.attachedFiles.map((file) => {
+        // Evitar que DataURLs masivas trunquen o crasheen el envio a Supabase o localStorage
+        if (file.url && file.url.startsWith('data:') && file.url.length > 20000) {
+          return {
+            ...file,
+            url: '',
+            note: 'Archivo PDF/documento. Por favor vuelve a adjuntarlo con el almacenamiento de Supabase habilitado.',
+          };
+        }
+        return file;
+      });
+    }
+    return copy;
+  } catch (e) {
+    return data;
+  }
+}
+
 // Helper para guardar respuesta / borrador en Supabase
 export async function saveResponseToSupabase(
   data: QuestionnaireData,
   clientId?: string
 ): Promise<{ success: boolean; result?: any; isLocalFallback?: boolean; error?: string }> {
+  const cleanData = sanitizeDataPayloadForSaving(data);
+
   try {
     const { data: result, error } = await supabase
       .from('questionnaire_responses')
       .insert([
         {
           client_id: clientId || null,
-          company_name: data.companyName || 'Empresa Sin Nombre',
-          client_name: data.clientName || 'Cliente No Especificado',
-          contact_email: data.contactEmail || '',
-          contact_phone: data.contactPhone || '',
-          data: data,
+          company_name: cleanData.companyName || 'Empresa Sin Nombre',
+          client_name: cleanData.clientName || 'Cliente No Especificado',
+          contact_email: cleanData.contactEmail || '',
+          contact_phone: cleanData.contactPhone || '',
+          data: cleanData,
           status: 'nuevo',
         },
       ])
@@ -385,8 +441,8 @@ export async function saveResponseToSupabase(
 
     if (error) {
       console.warn('Supabase insert warning, fallback to local storage:', error.message);
-      saveLocalDraftFallback(data, clientId);
-      return { success: true, isLocalFallback: true };
+      saveLocalDraftFallback(cleanData, clientId);
+      return { success: true, isLocalFallback: true, error: error.message };
     }
 
     const insertedId = result && result[0] ? result[0].id : null;
@@ -396,7 +452,7 @@ export async function saveResponseToSupabase(
       const adminNotif: AppNotification = {
         id: 'notif-quest-' + Date.now(),
         title: '¡Nuevo Cuestionario Recibido!',
-        message: `El cliente "${data.clientName || 'Cliente'}" (${data.companyName || 'Sin empresa'}) ha enviado un nuevo cuestionario para su verificación.`,
+        message: `El cliente "${cleanData.clientName || 'Cliente'}" (${cleanData.companyName || 'Sin empresa'}) ha enviado un nuevo cuestionario para su verificación.`,
         created_at: new Date().toISOString(),
         read: false,
         type: 'submission',
