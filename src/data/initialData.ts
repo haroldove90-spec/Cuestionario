@@ -20,6 +20,7 @@ export const emptyQuestionnaire: QuestionnaireData = {
     dailyProcessSteps: '',
     currentDocuments: [],
     customDocuments: '',
+    attachedFiles: [],
     requiresNotifications: false,
     notificationDetails: '',
     notificationChannels: [],

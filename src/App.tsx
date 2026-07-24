@@ -103,12 +103,18 @@ export default function App() {
     setAdminUser(null);
     localStorage.removeItem(ADMIN_SESSION_KEY);
     setIsAdminDashboardOpen(false);
+    setIsAdminLoginOpen(false);
+    setIsSummaryOpen(false);
+    setCurrentScreen('home');
     showToast('Sesión de administrador cerrada.');
   };
 
   const handleClientLogout = () => {
     setCurrentClient(null);
     localStorage.removeItem(CLIENT_SESSION_KEY);
+    setIsClientAuthOpen(false);
+    setIsSummaryOpen(false);
+    setCurrentScreen('home');
     showToast('Sesión de cliente cerrada.');
   };
 

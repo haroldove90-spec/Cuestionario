@@ -93,7 +93,93 @@ ALTER TABLE public.admin_users DISABLE ROW LEVEL SECURITY;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role, postgres;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role, postgres;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role, postgres;
+
+-- 6. Bucket de Supabase Storage para Documentos de Cuestionarios (PDF, Excel, Word, Imágenes, Video)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('questionnaire_files', 'questionnaire_files', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE policyname = 'Public Access on questionnaire_files'
+    ) THEN
+        CREATE POLICY "Public Access on questionnaire_files" ON storage.objects
+        FOR ALL USING (bucket_id = 'questionnaire_files') WITH CHECK (bucket_id = 'questionnaire_files');
+    END IF;
+END $$;
 `;
+
+// Helper para subir archivos directamente a Supabase Storage (con fallback local a DataURL)
+export async function uploadFileToSupabaseStorage(
+  file: File
+): Promise<{ success: boolean; url: string; fileName: string; fileSize: number; fileType: string; error?: string }> {
+  try {
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filePath = `docs/${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${cleanFileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('questionnaire_files')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (error) {
+      console.warn('Carga en Supabase Storage falló (activando fallback DataURL):', error.message);
+      const dataUrl = await fileToDataURL(file);
+      return {
+        success: true,
+        url: dataUrl,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type || 'application/octet-stream',
+      };
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('questionnaire_files')
+      .getPublicUrl(filePath);
+
+    return {
+      success: true,
+      url: publicUrlData.publicUrl,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type || 'application/octet-stream',
+    };
+  } catch (err: any) {
+    console.warn('Excepción en carga de archivo (activando fallback DataURL):', err);
+    try {
+      const dataUrl = await fileToDataURL(file);
+      return {
+        success: true,
+        url: dataUrl,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type || 'application/octet-stream',
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        url: '',
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        error: 'No se pudo procesar el archivo.',
+      };
+    }
+  }
+}
+
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // Helper para registro de clientes directamente en Supabase (con fallback local automático)
 export async function registerClientInSupabase(

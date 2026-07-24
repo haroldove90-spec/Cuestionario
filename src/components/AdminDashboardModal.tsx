@@ -23,6 +23,8 @@ import {
   Check,
   Download,
   Printer,
+  Paperclip,
+  ExternalLink,
   Sparkles,
   PieChart,
   HardDrive,
@@ -896,6 +898,27 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   <h5 className="font-bold text-xs text-blue-700">Sección 3: Proceso Diario y Notificaciones</h5>
                   <p><strong>Proceso Diario:</strong> {selectedRecord.data?.section3?.dailyProcessSteps || 'No especificado'}</p>
                   <p><strong>Documentos:</strong> {selectedRecord.data?.section3?.currentDocuments?.join(', ') || 'Ninguno'}</p>
+                  {selectedRecord.data?.section3?.attachedFiles && selectedRecord.data.section3.attachedFiles.length > 0 && (
+                    <div className="pt-1.5 pb-1">
+                      <p className="font-bold text-slate-900 mb-1">Archivos y documentos adjuntados ({selectedRecord.data.section3.attachedFiles.length}):</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedRecord.data.section3.attachedFiles.map((file) => (
+                          <a
+                            key={file.id}
+                            href={file.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                            title="Ver / Descargar archivo"
+                          >
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="truncate max-w-[180px]">{file.name}</span>
+                            <ExternalLink className="w-3 h-3 text-emerald-600 shrink-0 ml-0.5" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <p><strong>Requiere Notificaciones:</strong> {selectedRecord.data?.section3?.requiresNotifications ? 'Sí' : 'No'}</p>
                   <p><strong>Canales:</strong> {selectedRecord.data?.section3?.notificationChannels?.join(', ') || 'Ninguno'}</p>
                 </div>

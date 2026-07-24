@@ -55,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="Cerrar Sesión del Cliente"
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-600" />
-                <span className="hidden sm:inline">Salir</span>
+                <span>Salir</span>
               </button>
             </div>
           ) : (
@@ -89,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="Cerrar Sesión de Administrador"
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                <span className="hidden sm:inline">Salir Admin</span>
+                <span>Salir Admin</span>
               </button>
             </div>
           ) : (

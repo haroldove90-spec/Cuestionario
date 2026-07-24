@@ -1,6 +1,7 @@
-import React from 'react';
-import { GitCommit, FileText, Bell, Check } from 'lucide-react';
-import { Section3Workflow } from '../types';
+import React, { useState } from 'react';
+import { GitCommit, FileText, Bell, Check, Upload, Paperclip, FileSpreadsheet, Image as ImageIcon, Film, Trash2, ExternalLink, Loader2 } from 'lucide-react';
+import { Section3Workflow, AttachedFile } from '../types';
+import { uploadFileToSupabaseStorage } from '../lib/supabase';
 
 interface Section3Props {
   data: Section3Workflow;
@@ -26,6 +27,9 @@ const NOTIFICATION_OPTIONS = [
 ];
 
 export const Section3Workflows: React.FC<Section3Props> = ({ data, onChange }) => {
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const toggleDocument = (doc: string) => {
     const exists = data.currentDocuments.includes(doc);
     const updated = exists
@@ -40,6 +44,66 @@ export const Section3Workflows: React.FC<Section3Props> = ({ data, onChange }) =
       ? data.notificationChannels.filter((c) => c !== channel)
       : [...data.notificationChannels, channel];
     onChange({ ...data, notificationChannels: updated });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    const newAttachments: AttachedFile[] = [...(data.attachedFiles || [])];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const res = await uploadFileToSupabaseStorage(file);
+      if (res.success && res.url) {
+        newAttachments.push({
+          id: 'file-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+          name: res.fileName,
+          size: res.fileSize,
+          type: res.fileType,
+          url: res.url,
+          uploadedAt: new Date().toLocaleDateString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+        });
+      } else {
+        setUploadError(res.error || 'Error al subir uno de los archivos.');
+      }
+    }
+
+    onChange({ ...data, attachedFiles: newAttachments });
+    setIsUploading(false);
+    // Reset file input value
+    e.target.value = '';
+  };
+
+  const handleRemoveFile = (fileId: string) => {
+    const updated = (data.attachedFiles || []).filter((f) => f.id !== fileId);
+    onChange({ ...data, attachedFiles: updated });
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const getFileIcon = (type: string, name: string) => {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    if (type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+      return <ImageIcon className="w-5 h-5 text-emerald-600 shrink-0" />;
+    }
+    if (type.startsWith('video/') || ['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext)) {
+      return <Film className="w-5 h-5 text-purple-600 shrink-0" />;
+    }
+    if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('spreadsheet') || type.includes('excel')) {
+      return <FileSpreadsheet className="w-5 h-5 text-emerald-700 shrink-0" />;
+    }
+    if (ext === 'pdf' || type.includes('pdf')) {
+      return <FileText className="w-5 h-5 text-rose-600 shrink-0" />;
+    }
+    return <Paperclip className="w-5 h-5 text-blue-600 shrink-0" />;
   };
 
   return (
@@ -122,6 +186,105 @@ export const Section3Workflows: React.FC<Section3Props> = ({ data, onChange }) =
               placeholder="Ej. Hoja de diagnóstico técnico, contrato de arrendamiento, formato de garantía..."
               className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl outline-none focus:border-blue-500 transition-colors shadow-2xs text-slate-700"
             />
+          </div>
+
+          {/* Subida de Archivos y Documentos de Ejemplo (PDF, Excel, Word, Imágenes, Video) */}
+          <div className="pt-2 border-t border-slate-100">
+            <label className="block text-xs font-bold text-slate-800 mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Upload className="w-4 h-4 text-blue-600" />
+                Adjuntar archivos o documentos de muestra (PDF, Excel, Word, Imágenes, Video):
+              </span>
+              <span className="text-[11px] font-normal text-slate-500">Guardado directo en Supabase</span>
+            </label>
+
+            {/* Dropzone / Upload button */}
+            <div className="relative border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50 rounded-2xl p-4 text-center transition-all cursor-pointer">
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,image/*,video/*"
+                onChange={handleFileUpload}
+                disabled={isUploading}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-10"
+                title="Haz clic o arrastra aquí tus archivos PDF, Excel, Word, imágenes o video"
+              />
+              <div className="flex flex-col items-center justify-center gap-1.5 text-slate-600">
+                {isUploading ? (
+                  <div className="flex items-center gap-2 text-blue-700 font-bold text-xs py-2">
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                    <span>Subiendo archivo(s) a Supabase Storage...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="p-2.5 bg-white rounded-full shadow-xs border border-blue-100 text-blue-600">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-800">
+                      Haz clic o arrastra tus archivos aquí
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      Formatos soportados: PDF, Excel (.xlsx, .csv), Word (.docx), Imágenes (.png, .jpg), Video (.mp4, .webm)
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {uploadError && (
+              <p className="text-xs font-bold text-rose-600 mt-2 bg-rose-50 p-2 rounded-lg border border-rose-200">
+                {uploadError}
+              </p>
+            )}
+
+            {/* Lista de archivos adjuntos */}
+            {data.attachedFiles && data.attachedFiles.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <span className="text-xs font-bold text-slate-700 block">
+                  Archivos adjuntados ({data.attachedFiles.length}):
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {data.attachedFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-blue-300 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {getFileIcon(file.type, file.name)}
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate" title={file.name}>
+                            {file.name}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {formatFileSize(file.size)} • {file.uploadedAt}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <a
+                          href={file.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+                          title="Ver / Abrir documento"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile(file.id)}
+                          className="p-1.5 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar archivo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

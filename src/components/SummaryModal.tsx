@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Download, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2, Paperclip, ExternalLink } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { QuestionnaireData } from '../types';
@@ -423,6 +423,28 @@ ${
                 </span>
               )}
             </div>
+
+            {data.section3.attachedFiles && data.section3.attachedFiles.length > 0 && (
+              <div className="pt-2 text-xs">
+                <span className="font-bold text-slate-900 block mb-1">Archivos y documentos adjuntos:</span>
+                <div className="flex flex-wrap gap-2">
+                  {data.section3.attachedFiles.map((file) => (
+                    <a
+                      key={file.id}
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                      title="Abrir o descargar archivo adjunto"
+                    >
+                      <Paperclip className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{file.name}</span>
+                      <ExternalLink className="w-3 h-3 text-emerald-600 ml-0.5" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {data.section3.requiresNotifications && (
               <div className="text-xs text-slate-700 pt-1">

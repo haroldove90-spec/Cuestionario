@@ -4,6 +4,15 @@ export interface UserRole {
   functions: string;
 }
 
+export interface AttachedFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  url: string;
+  uploadedAt: string;
+}
+
 export interface Section1Company {
   mainActivity: string;
   mainObjective: string;
@@ -20,6 +29,7 @@ export interface Section3Workflow {
   dailyProcessSteps: string;
   currentDocuments: string[];
   customDocuments: string;
+  attachedFiles?: AttachedFile[];
   requiresNotifications: boolean;
   notificationDetails: string;
   notificationChannels: string[];
