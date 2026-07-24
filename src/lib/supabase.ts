@@ -104,7 +104,7 @@ SET password_hash = '${ADMIN_CREDENTIALS.password}',
     full_name = '${ADMIN_CREDENTIALS.name}',
     name = '${ADMIN_CREDENTIALS.name}';
 
--- 5. Habilitar permisos de lectura y escritura para API Pública (Desactivar RLS y Otorgar Permisos)
+-- 5. Habilitar permisos de lectura y escritura para API Pública (Desactivar RLS y Otorgar Permisos Totales)
 ALTER TABLE public.client_users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.questionnaire_responses DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_notifications DISABLE ROW LEVEL SECURITY;
@@ -465,7 +465,7 @@ export async function fetchClientResponseFromSupabase(
   return null;
 }
 
-// Helper para guardar respuesta / borrador en Supabase (actualiza si existe o crea nuevo)
+// Helper para guardar respuesta / borrador en Supabase (guarda borradores o registra nuevos envíos en el historial)
 export async function saveResponseToSupabase(
   data: QuestionnaireData,
   clientId?: string,
@@ -479,48 +479,32 @@ export async function saveResponseToSupabase(
   const phone = cleanData.contactPhone || '';
 
   try {
-    // Verificar si ya existe una respuesta para este cliente o correo
-    let existingId: string | null = null;
-    let existingStatus: string = status;
+    let resultRecord: any = null;
 
-    if (clientId || cleanEmail) {
+    // Si el estatus es 'borrador', buscar si el cliente ya tiene un borrador previo para actualizarlo
+    let draftId: string | null = null;
+    if (status === 'borrador' && (clientId || cleanEmail)) {
       try {
-        let checkQuery = supabase.from('questionnaire_responses').select('id, status');
+        let draftQuery = supabase
+          .from('questionnaire_responses')
+          .select('id')
+          .eq('status', 'borrador');
         if (clientId) {
-          checkQuery = checkQuery.eq('client_id', clientId);
+          draftQuery = draftQuery.eq('client_id', clientId);
         } else if (cleanEmail) {
-          checkQuery = checkQuery.eq('contact_email', cleanEmail);
+          draftQuery = draftQuery.eq('contact_email', cleanEmail);
         }
-
-        const { data: existingRows, error: checkErr } = await checkQuery.order('created_at', { ascending: false }).limit(1);
-        
-        if (checkErr && clientId && cleanEmail) {
-          // Si falló la consulta por client_id (ej. sintaxis de UUID), reintentar solo por correo
-          const { data: emailRows } = await supabase
-            .from('questionnaire_responses')
-            .select('id, status')
-            .eq('contact_email', cleanEmail)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          if (emailRows && emailRows.length > 0) {
-            existingId = emailRows[0].id;
-            existingStatus = emailRows[0].status || status;
-          }
-        } else if (existingRows && existingRows.length > 0) {
-          existingId = existingRows[0].id;
-          existingStatus = existingRows[0].status || status;
+        const { data: draftRows } = await draftQuery.order('created_at', { ascending: false }).limit(1);
+        if (draftRows && draftRows.length > 0) {
+          draftId = draftRows[0].id;
         }
       } catch (e) {
         console.warn('Excepción consultando borrador previo:', e);
       }
     }
 
-    let resultRecord: any = null;
-    // Si se envía explícitamente como 'nuevo' o 'borrador', usar ese estatus
-    const finalStatus = status === 'nuevo' ? 'nuevo' : (status === 'borrador' && existingStatus !== 'borrador' ? existingStatus : status);
-
-    if (existingId) {
-      // Actualizar registro existente
+    if (draftId && status === 'borrador') {
+      // Actualizar borrador existente
       const { data: updateRes, error: updateErr } = await supabase
         .from('questionnaire_responses')
         .update({
@@ -529,51 +513,57 @@ export async function saveResponseToSupabase(
           contact_email: cleanEmail,
           contact_phone: phone,
           data: cleanData,
-          status: finalStatus,
+          status: 'borrador',
+          created_at: new Date().toISOString(),
         })
-        .eq('id', existingId)
+        .eq('id', draftId)
         .select();
 
       if (!updateErr && updateRes && updateRes.length > 0) {
         resultRecord = updateRes[0];
-      } else if (updateErr) {
-        console.warn('Error al actualizar borrador en Supabase:', updateErr.message);
       }
     }
 
+    // Si no es un borrador que se actualizó, es un nuevo envío oficial ('nuevo') o un nuevo registro
     if (!resultRecord) {
-      // Insertar nuevo registro
+      const generatedId = 'resp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+      const newCreatedAt = new Date().toISOString();
+
       const { data: insertRes, error: insertErr } = await supabase
         .from('questionnaire_responses')
         .insert([
           {
+            id: generatedId,
             client_id: clientId || null,
             company_name: company,
             client_name: clientName,
             contact_email: cleanEmail,
             contact_phone: phone,
             data: cleanData,
-            status: finalStatus,
+            status: status,
+            created_at: newCreatedAt,
           },
         ])
         .select();
 
       if (insertErr) {
-        console.warn('Error al insertar borrador en Supabase:', insertErr.message);
-        
-        // Si falló por incompatibilidad del tipo de client_id (UUID vs TEXT), reintentar sin client_id
+        console.warn('Error al insertar cuestionario en Supabase:', insertErr.message);
+
+        // Si falló por tipo de client_id (UUID vs TEXT), reintentar con client_id nulo
         if (insertErr.message.includes('uuid') || insertErr.message.includes('syntax')) {
           const { data: retryRes, error: retryErr } = await supabase
             .from('questionnaire_responses')
             .insert([
               {
+                id: generatedId,
                 client_id: null,
                 company_name: company,
                 client_name: clientName,
                 contact_email: cleanEmail,
                 contact_phone: phone,
                 data: cleanData,
-                status: finalStatus,
+                status: status,
+                created_at: newCreatedAt,
               },
             ])
             .select();
@@ -582,11 +572,11 @@ export async function saveResponseToSupabase(
             resultRecord = retryRes[0];
           } else {
             console.warn('Reintento de inserción también falló:', retryErr?.message);
-            saveLocalDraftFallback(cleanData, clientId, finalStatus);
+            saveLocalDraftFallback(cleanData, clientId, status, generatedId);
             return { success: true, isLocalFallback: true, error: retryErr?.message || insertErr.message };
           }
         } else {
-          saveLocalDraftFallback(cleanData, clientId, finalStatus);
+          saveLocalDraftFallback(cleanData, clientId, status, generatedId);
           return { success: true, isLocalFallback: true, error: insertErr.message };
         }
       } else {
@@ -594,49 +584,73 @@ export async function saveResponseToSupabase(
       }
     }
 
-    saveLocalDraftFallback(cleanData, clientId, finalStatus);
+    saveLocalDraftFallback(cleanData, clientId, status, resultRecord?.id);
 
-    const insertedId = resultRecord?.id || existingId;
+    const insertedId = resultRecord?.id || 'resp-' + Date.now();
 
     // Crear notificación para el admin
     try {
       const adminNotif: AppNotification = {
-        id: 'notif-quest-' + Date.now(),
-        title: finalStatus === 'nuevo' ? '¡Nuevo Cuestionario Enviado!' : '¡Cuestionario Guardado / Actualizado!',
-        message: `El cliente "${clientName}" (${company}) ha ${finalStatus === 'nuevo' ? 'enviado para revisión' : 'guardado'} su cuestionario con archivos adjuntos.`,
+        id: 'notif-quest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+        title: status === 'nuevo' ? '¡Nuevo Cuestionario Enviado!' : '¡Cuestionario Guardado / Actualizado!',
+        message: `El cliente "${clientName}" (${company}) ha ${status === 'nuevo' ? 'enviado para revisión' : 'guardado'} su cuestionario con información actualizada.`,
         created_at: new Date().toISOString(),
         read: false,
         type: 'submission',
         recipient_role: 'admin',
         client_email: cleanEmail,
-        response_id: insertedId || undefined,
+        response_id: insertedId,
       };
 
       await createAdminNotificationInSupabase(adminNotif);
     } catch (notifErr) {
-      console.warn('No se pudo crear notificación:', notifErr);
+      console.warn('No se pudo crear notificación para admin:', notifErr);
     }
 
     return { success: true, result: resultRecord };
   } catch (err: any) {
-    console.error('Excepción Supabase:', err);
+    console.error('Excepción Supabase al guardar cuestionario:', err);
     saveLocalDraftFallback(data, clientId, status);
     return { success: true, isLocalFallback: true, error: err.message };
   }
 }
-function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, status?: string) {
+
+function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, status?: string, recordId?: string) {
   try {
     const localResponses = getLocalResponsesFallback();
-    const existingIndex = localResponses.findIndex(
-      (r) =>
-        (clientId && r.client_id === clientId) ||
-        (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase())
-    );
 
-    const targetStatus = (status || (existingIndex >= 0 ? localResponses[existingIndex].status : 'nuevo')) as QuestionnaireResponseRecord['status'];
+    if (status === 'borrador') {
+      const existingDraftIndex = localResponses.findIndex(
+        (r) =>
+          r.status === 'borrador' &&
+          ((clientId && r.client_id === clientId) ||
+            (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase()))
+      );
 
-    const updatedRecord: QuestionnaireResponseRecord = {
-      id: existingIndex >= 0 ? localResponses[existingIndex].id : 'resp-' + Date.now(),
+      const draftRecord: QuestionnaireResponseRecord = {
+        id: existingDraftIndex >= 0 ? localResponses[existingDraftIndex].id : (recordId || 'resp-' + Date.now()),
+        created_at: new Date().toISOString(),
+        client_id: clientId,
+        company_name: data.companyName || 'Empresa Sin Nombre',
+        client_name: data.clientName || 'Cliente No Especificado',
+        contact_email: data.contactEmail || '',
+        contact_phone: data.contactPhone || '',
+        data: data,
+        status: 'borrador',
+      };
+
+      if (existingDraftIndex >= 0) {
+        localResponses[existingDraftIndex] = draftRecord;
+      } else {
+        localResponses.unshift(draftRecord);
+      }
+      saveLocalResponses(localResponses);
+      return;
+    }
+
+    // Para envíos de cuestionarios ('nuevo' u otros estados): agregar como un nuevo registro en el historial
+    const newRecord: QuestionnaireResponseRecord = {
+      id: recordId || 'resp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
       created_at: new Date().toISOString(),
       client_id: clientId,
       company_name: data.companyName || 'Empresa Sin Nombre',
@@ -644,15 +658,18 @@ function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, stat
       contact_email: data.contactEmail || '',
       contact_phone: data.contactPhone || '',
       data: data,
-      status: targetStatus,
+      status: (status || 'nuevo') as QuestionnaireResponseRecord['status'],
     };
 
-    if (existingIndex >= 0) {
-      localResponses[existingIndex] = updatedRecord;
-      saveLocalResponses([...localResponses]);
-    } else {
-      saveLocalResponses([updatedRecord, ...localResponses]);
-    }
+    // Remover cualquier borrador previo del cliente al enviar oficialmente
+    const filtered = localResponses.filter(
+      (r) =>
+        !(r.status === 'borrador' &&
+          ((clientId && r.client_id === clientId) ||
+            (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase())))
+    );
+
+    saveLocalResponses([newRecord, ...filtered]);
   } catch (e) {
     console.error('Error saving local fallback draft:', e);
   }
