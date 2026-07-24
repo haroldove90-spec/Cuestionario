@@ -16,6 +16,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
 import { ClientAuthModal } from './components/ClientAuthModal';
 import { ClientNotificationsModal } from './components/ClientNotificationsModal';
+import { ClientQuestionnairesModal } from './components/ClientQuestionnairesModal';
 import { HomeScreen } from './components/HomeScreen';
 import { Toast } from './components/Toast';
 import { ChevronRight, ChevronLeft, Eye, Save, CheckCircle, Sparkles, Send, Database, Loader2, Home } from 'lucide-react';
@@ -85,6 +86,7 @@ export default function App() {
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState<boolean>(false);
   const [isClientAuthOpen, setIsClientAuthOpen] = useState<boolean>(false);
   const [isClientNotifsOpen, setIsClientNotifsOpen] = useState<boolean>(false);
+  const [isClientQuestionnairesOpen, setIsClientQuestionnairesOpen] = useState<boolean>(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
   const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
@@ -196,13 +198,28 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     
     // Save draft to Supabase associated with the logged in client or current session
-    const res = await saveResponseToSupabase(data, currentClient?.id);
+    const res = await saveResponseToSupabase(data, currentClient?.id, 'borrador');
     setIsSavingDraft(false);
 
     if (res.success) {
       showToast('¡Borrador guardado exitosamente en la Base de Datos (Supabase)!');
     } else {
       showToast('Borrador guardado localmente (sincronizando con Supabase...)');
+    }
+  };
+
+  const handleSendToAdmin = async () => {
+    setIsSavingDraft(true);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+
+    // Save with status 'nuevo' to send to Admin
+    const res = await saveResponseToSupabase(data, currentClient?.id, 'nuevo');
+    setIsSavingDraft(false);
+
+    if (res.success) {
+      showToast('¡Cuestionario enviado exitosamente al Administrador!');
+    } else {
+      showToast('Cuestionario guardado y listo para sincronización con el Administrador.');
     }
   };
 
@@ -312,6 +329,7 @@ export default function App() {
         onOpenClientAuth={() => setIsClientAuthOpen(true)}
         onClientLogout={handleClientLogout}
         onOpenClientNotifs={() => setIsClientNotifsOpen(true)}
+        onOpenClientQuestionnaires={() => setIsClientQuestionnairesOpen(true)}
         onGoHome={() => setCurrentScreen('home')}
       />
 
@@ -322,6 +340,7 @@ export default function App() {
         onLoadSample={handleLoadSample}
         onClear={handleClear}
         onSave={handleSaveDraft}
+        onSendToAdmin={handleSendToAdmin}
         onOpenSummary={() => setIsSummaryOpen(true)}
         onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         viewMode={viewMode}
@@ -520,24 +539,37 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleSaveDraft}
               disabled={isSavingDraft}
-              className="px-4 py-1.5 text-white font-extrabold bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg shadow-sm transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              className="px-3.5 py-1.5 text-blue-900 font-extrabold bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50 text-xs"
+              title="Guardar borrador para continuar después"
             >
-              {isSavingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              <span>{isSavingDraft ? 'Guardando...' : 'Guardar Borrador'}</span>
+              {isSavingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 text-blue-600" />}
+              <span>Guardar Borrador</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsSummaryOpen(true)}
-              className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+              title="Revisar el cuestionario y descargar PDF"
             >
               <Eye className="w-3.5 h-3.5" />
-              <span>Revisar y Exportar</span>
+              <span>Revisar Cuestionario</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSendToAdmin}
+              disabled={isSavingDraft}
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold rounded-lg shadow-md shadow-emerald-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs disabled:opacity-50"
+              title="Enviar cuestionario al administrador"
+            >
+              <Send className="w-3.5 h-3.5 text-white" />
+              <span>Enviar al Admin</span>
             </button>
           </div>
         </div>
@@ -549,6 +581,7 @@ export default function App() {
         isOpen={isSummaryOpen}
         onClose={() => setIsSummaryOpen(false)}
         onToast={showToast}
+        onSendToAdmin={handleSendToAdmin}
       />
 
       {/* Supabase SQL & Configuration Modal */}
@@ -591,6 +624,21 @@ export default function App() {
           isOpen={isClientNotifsOpen}
           onClose={() => setIsClientNotifsOpen(false)}
           currentClient={currentClient}
+        />
+      )}
+
+      {/* Client Questionnaires Modal (Mis Cuestionarios) */}
+      {currentClient && (
+        <ClientQuestionnairesModal
+          isOpen={isClientQuestionnairesOpen}
+          onClose={() => setIsClientQuestionnairesOpen(false)}
+          currentClient={currentClient}
+          onSelectQuestionnaire={(selectedData) => setData(selectedData)}
+          onOpenSummaryForRecord={(selectedData) => {
+            setData(selectedData);
+            setIsSummaryOpen(true);
+          }}
+          onToast={showToast}
         />
       )}
 

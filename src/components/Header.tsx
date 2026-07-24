@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, User, UserCheck, LogOut, Bell } from 'lucide-react';
+import { ShieldCheck, Lock, User, UserCheck, LogOut, Bell, FolderOpen } from 'lucide-react';
 import { AdminUser, ClientUser } from '../types';
 import { Logo } from './Logo';
 
@@ -12,6 +12,7 @@ interface HeaderProps {
   onOpenClientAuth: () => void;
   onClientLogout: () => void;
   onOpenClientNotifs?: () => void;
+  onOpenClientQuestionnaires?: () => void;
   onGoHome?: () => void;
 }
 
@@ -24,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenClientAuth,
   onClientLogout,
   onOpenClientNotifs,
+  onOpenClientQuestionnaires,
   onGoHome,
 }) => {
   return (
@@ -50,6 +52,18 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden md:inline text-slate-500 font-normal">Cliente:</span>
                 <span className="truncate max-w-[120px] sm:max-w-[160px]">{currentClient.full_name}</span>
               </div>
+
+              {onOpenClientQuestionnaires && (
+                <button
+                  type="button"
+                  onClick={onOpenClientQuestionnaires}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-extrabold text-blue-900 bg-white hover:bg-blue-100 border border-blue-200 rounded-lg transition-all cursor-pointer shadow-2xs"
+                  title="Ver mis cuestionarios guardados y enviados"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="hidden sm:inline">Mis Cuestionarios</span>
+                </button>
+              )}
 
               {onOpenClientNotifs && (
                 <button

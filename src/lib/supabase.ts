@@ -407,14 +407,16 @@ function saveLocalClients(clients: ClientUser[]) {
   }
 }
 
-// Helper para obtener el borrador / respuesta del cliente desde Supabase
-export async function fetchClientResponseFromSupabase(
+// Helper para obtener la lista completa de cuestionarios de un cliente desde Supabase
+export async function fetchClientQuestionnairesFromSupabase(
   clientId?: string,
   email?: string
-): Promise<QuestionnaireData | null> {
+): Promise<QuestionnaireResponseRecord[]> {
+  const localResponses = getLocalResponsesFallback();
+  const cleanEmail = email?.trim().toLowerCase();
+
   try {
-    const cleanEmail = email?.trim().toLowerCase();
-    if (!clientId && !cleanEmail) return null;
+    if (!clientId && !cleanEmail) return localResponses;
 
     let query = supabase.from('questionnaire_responses').select('*');
     if (clientId) {
@@ -423,21 +425,39 @@ export async function fetchClientResponseFromSupabase(
       query = query.eq('contact_email', cleanEmail);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false }).limit(1);
+    const { data, error } = await query.order('created_at', { ascending: false });
 
-    if (!error && data && data.length > 0) {
-      return data[0].data as QuestionnaireData;
+    if (!error && data) {
+      // Combinar con locales
+      const remoteIds = new Set(data.map((d: any) => String(d.id)));
+      const unsyncedLocal = localResponses.filter(
+        (r) =>
+          ((clientId && r.client_id === clientId) ||
+            (cleanEmail && r.contact_email?.toLowerCase() === cleanEmail)) &&
+          !remoteIds.has(String(r.id))
+      );
+      return [...data, ...unsyncedLocal] as QuestionnaireResponseRecord[];
     }
+  } catch (err) {
+    console.warn('Error al obtener cuestionarios del cliente:', err);
+  }
 
-    // Fallback local
-    const localResponses = getLocalResponsesFallback();
-    const found = localResponses.find(
-      (r) =>
-        (clientId && r.client_id === clientId) ||
-        (cleanEmail && r.contact_email?.toLowerCase() === cleanEmail)
-    );
-    if (found && found.data) {
-      return found.data;
+  return localResponses.filter(
+    (r) =>
+      (clientId && r.client_id === clientId) ||
+      (cleanEmail && r.contact_email?.toLowerCase() === cleanEmail)
+  );
+}
+
+// Helper para obtener el borrador / respuesta del cliente desde Supabase
+export async function fetchClientResponseFromSupabase(
+  clientId?: string,
+  email?: string
+): Promise<QuestionnaireData | null> {
+  try {
+    const list = await fetchClientQuestionnairesFromSupabase(clientId, email);
+    if (list && list.length > 0) {
+      return list[0].data as QuestionnaireData;
     }
   } catch (err) {
     console.warn('Error fetching client response from Supabase:', err);
@@ -448,7 +468,8 @@ export async function fetchClientResponseFromSupabase(
 // Helper para guardar respuesta / borrador en Supabase (actualiza si existe o crea nuevo)
 export async function saveResponseToSupabase(
   data: QuestionnaireData,
-  clientId?: string
+  clientId?: string,
+  status: 'borrador' | 'nuevo' | 'en_revision' | 'aprobado' | 'completado' = 'borrador'
 ): Promise<{ success: boolean; result?: any; isLocalFallback?: boolean; error?: string }> {
   // Guardar datos completos con todos los archivos adjuntos y URLs de Supabase Storage intactos
   const cleanData = data;
@@ -460,9 +481,11 @@ export async function saveResponseToSupabase(
   try {
     // Verificar si ya existe una respuesta para este cliente o correo
     let existingId: string | null = null;
+    let existingStatus: string = status;
+
     if (clientId || cleanEmail) {
       try {
-        let checkQuery = supabase.from('questionnaire_responses').select('id');
+        let checkQuery = supabase.from('questionnaire_responses').select('id, status');
         if (clientId) {
           checkQuery = checkQuery.eq('client_id', clientId);
         } else if (cleanEmail) {
@@ -475,15 +498,17 @@ export async function saveResponseToSupabase(
           // Si falló la consulta por client_id (ej. sintaxis de UUID), reintentar solo por correo
           const { data: emailRows } = await supabase
             .from('questionnaire_responses')
-            .select('id')
+            .select('id, status')
             .eq('contact_email', cleanEmail)
             .order('created_at', { ascending: false })
             .limit(1);
           if (emailRows && emailRows.length > 0) {
             existingId = emailRows[0].id;
+            existingStatus = emailRows[0].status || status;
           }
         } else if (existingRows && existingRows.length > 0) {
           existingId = existingRows[0].id;
+          existingStatus = existingRows[0].status || status;
         }
       } catch (e) {
         console.warn('Excepción consultando borrador previo:', e);
@@ -491,6 +516,8 @@ export async function saveResponseToSupabase(
     }
 
     let resultRecord: any = null;
+    // Si se envía explícitamente como 'nuevo' o 'borrador', usar ese estatus
+    const finalStatus = status === 'nuevo' ? 'nuevo' : (status === 'borrador' && existingStatus !== 'borrador' ? existingStatus : status);
 
     if (existingId) {
       // Actualizar registro existente
@@ -502,6 +529,7 @@ export async function saveResponseToSupabase(
           contact_email: cleanEmail,
           contact_phone: phone,
           data: cleanData,
+          status: finalStatus,
         })
         .eq('id', existingId)
         .select();
@@ -525,7 +553,7 @@ export async function saveResponseToSupabase(
             contact_email: cleanEmail,
             contact_phone: phone,
             data: cleanData,
-            status: 'nuevo',
+            status: finalStatus,
           },
         ])
         .select();
@@ -545,7 +573,7 @@ export async function saveResponseToSupabase(
                 contact_email: cleanEmail,
                 contact_phone: phone,
                 data: cleanData,
-                status: 'nuevo',
+                status: finalStatus,
               },
             ])
             .select();
@@ -554,11 +582,11 @@ export async function saveResponseToSupabase(
             resultRecord = retryRes[0];
           } else {
             console.warn('Reintento de inserción también falló:', retryErr?.message);
-            saveLocalDraftFallback(cleanData, clientId);
+            saveLocalDraftFallback(cleanData, clientId, finalStatus);
             return { success: true, isLocalFallback: true, error: retryErr?.message || insertErr.message };
           }
         } else {
-          saveLocalDraftFallback(cleanData, clientId);
+          saveLocalDraftFallback(cleanData, clientId, finalStatus);
           return { success: true, isLocalFallback: true, error: insertErr.message };
         }
       } else {
@@ -566,7 +594,7 @@ export async function saveResponseToSupabase(
       }
     }
 
-    saveLocalDraftFallback(cleanData, clientId);
+    saveLocalDraftFallback(cleanData, clientId, finalStatus);
 
     const insertedId = resultRecord?.id || existingId;
 
@@ -574,27 +602,17 @@ export async function saveResponseToSupabase(
     try {
       const adminNotif: AppNotification = {
         id: 'notif-quest-' + Date.now(),
-        title: '¡Cuestionario Actualizado / Recibido!',
-        message: `El cliente "${clientName}" (${company}) ha guardado/enviado su cuestionario con archivos adjuntos.`,
+        title: finalStatus === 'nuevo' ? '¡Nuevo Cuestionario Enviado!' : '¡Cuestionario Guardado / Actualizado!',
+        message: `El cliente "${clientName}" (${company}) ha ${finalStatus === 'nuevo' ? 'enviado para revisión' : 'guardado'} su cuestionario con archivos adjuntos.`,
         created_at: new Date().toISOString(),
         read: false,
         type: 'submission',
         recipient_role: 'admin',
-        response_id: insertedId,
+        client_email: cleanEmail,
+        response_id: insertedId || undefined,
       };
-      const localNotifs = getLocalNotificationsFallback();
-      saveLocalNotifications([adminNotif, ...localNotifs]);
 
-      await supabase.from('app_notifications').insert([
-        {
-          title: adminNotif.title,
-          message: adminNotif.message,
-          type: 'submission',
-          recipient_role: 'admin',
-          response_id: insertedId,
-          read: false,
-        },
-      ]);
+      await createAdminNotificationInSupabase(adminNotif);
     } catch (notifErr) {
       console.warn('No se pudo crear notificación:', notifErr);
     }
@@ -602,12 +620,11 @@ export async function saveResponseToSupabase(
     return { success: true, result: resultRecord };
   } catch (err: any) {
     console.error('Excepción Supabase:', err);
-    saveLocalDraftFallback(data, clientId);
-    return { success: true, isLocalFallback: true };
+    saveLocalDraftFallback(data, clientId, status);
+    return { success: true, isLocalFallback: true, error: err.message };
   }
 }
-
-function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string) {
+function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, status?: string) {
   try {
     const localResponses = getLocalResponsesFallback();
     const existingIndex = localResponses.findIndex(
@@ -615,6 +632,8 @@ function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string) {
         (clientId && r.client_id === clientId) ||
         (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase())
     );
+
+    const targetStatus = (status || (existingIndex >= 0 ? localResponses[existingIndex].status : 'nuevo')) as QuestionnaireResponseRecord['status'];
 
     const updatedRecord: QuestionnaireResponseRecord = {
       id: existingIndex >= 0 ? localResponses[existingIndex].id : 'resp-' + Date.now(),
@@ -625,7 +644,7 @@ function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string) {
       contact_email: data.contactEmail || '',
       contact_phone: data.contactPhone || '',
       data: data,
-      status: existingIndex >= 0 ? localResponses[existingIndex].status : 'nuevo',
+      status: targetStatus,
     };
 
     if (existingIndex >= 0) {
@@ -717,6 +736,27 @@ export async function deleteResponseFromSupabase(id: string) {
       .eq('id', id);
   } catch (err) {
     console.error('Exception deleting response from Supabase:', err);
+  }
+}
+
+export async function createAdminNotificationInSupabase(notif: AppNotification) {
+  try {
+    const localNotifs = getLocalNotificationsFallback();
+    saveLocalNotifications([notif, ...localNotifs]);
+
+    await supabase.from('app_notifications').insert([
+      {
+        title: notif.title,
+        message: notif.message,
+        type: notif.type || 'submission',
+        recipient_role: 'admin',
+        client_email: notif.client_email || null,
+        response_id: notif.response_id || null,
+        read: false,
+      },
+    ]);
+  } catch (err) {
+    console.warn('Error insertando notificación de admin en Supabase:', err);
   }
 }
 

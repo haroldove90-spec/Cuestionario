@@ -86,7 +86,7 @@ export interface QuestionnaireResponseRecord {
   contact_email: string;
   contact_phone: string;
   data: QuestionnaireData;
-  status: 'nuevo' | 'enviado' | 'en_revision' | 'aprobado' | 'completado';
+  status: 'nuevo' | 'borrador' | 'enviado' | 'en_revision' | 'aprobado' | 'completado';
   notes?: string;
 }
 

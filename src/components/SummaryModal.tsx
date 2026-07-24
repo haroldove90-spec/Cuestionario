@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2, Paperclip, ExternalLink } from 'lucide-react';
+import { X, Download, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2, Paperclip, ExternalLink, Send } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { QuestionnaireData } from '../types';
@@ -11,6 +11,7 @@ interface SummaryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onToast: (msg: string) => void;
+  onSendToAdmin?: () => void;
 }
 
 export const SummaryModal: React.FC<SummaryModalProps> = ({
@@ -18,6 +19,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
   isOpen,
   onClose,
   onToast,
+  onSendToAdmin,
 }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -279,7 +281,7 @@ ${
               type="button"
               onClick={handleDownloadPDF}
               disabled={isSyncing || isExporting}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
               title="Descargar cuestionario en PDF"
             >
               {isExporting ? (
@@ -290,10 +292,25 @@ ${
               ) : (
                 <>
                   <Download className="w-4 h-4" />
-                  <span>Descargar Cuestionario PDF</span>
+                  <span>Descargar PDF</span>
                 </>
               )}
             </button>
+
+            {onSendToAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSendToAdmin();
+                  onClose();
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-md cursor-pointer"
+                title="Enviar cuestionario directamente al Administrador"
+              >
+                <Send className="w-4 h-4" />
+                <span>Enviar al Admin</span>
+              </button>
+            )}
 
             <button
               type="button"

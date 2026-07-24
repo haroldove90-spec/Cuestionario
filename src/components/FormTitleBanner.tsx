@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardList, Sparkles, RotateCcw, Eye, Save, Building2, Database } from 'lucide-react';
+import { ClipboardList, Sparkles, RotateCcw, Eye, Save, Building2, Database, Send } from 'lucide-react';
 import { QuestionnaireData } from '../types';
 
 interface FormTitleBannerProps {
@@ -8,6 +8,7 @@ interface FormTitleBannerProps {
   onLoadSample: () => void;
   onClear: () => void;
   onSave: () => void;
+  onSendToAdmin: () => void;
   onOpenSummary: () => void;
   onOpenSupabaseModal: () => void;
   viewMode: 'wizard' | 'full';
@@ -21,6 +22,7 @@ export const FormTitleBanner: React.FC<FormTitleBannerProps> = ({
   onLoadSample,
   onClear,
   onSave,
+  onSendToAdmin,
   onOpenSummary,
   onOpenSupabaseModal,
   viewMode,
@@ -51,44 +53,67 @@ export const FormTitleBanner: React.FC<FormTitleBannerProps> = ({
             <button
               type="button"
               onClick={onOpenSupabaseModal}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
               title="Configuración e integración con Supabase"
             >
               <Database className="w-3.5 h-3.5 text-emerald-600" />
-              Supabase / SQL
+              SQL
             </button>
 
             <button
               type="button"
               onClick={onLoadSample}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
               title="Cargar respuestas de ejemplo para probar el formulario"
             >
               <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              Cargar Ejemplo
+              Ejemplo
             </button>
 
             <button
               type="button"
               onClick={onClear}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
               title="Limpiar todas las respuestas"
             >
               <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
               Limpiar
             </button>
 
+            <div className="h-4 w-px bg-slate-200 mx-0.5 hidden sm:block"></div>
+
+            {/* TRES BOTONES PRINCIPALES DE ACCIÓN */}
             <button
               type="button"
               onClick={onSave}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-              title="Guardar borrador directamente en la Base de Datos Supabase"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-lg shadow-2xs transition-all cursor-pointer"
+              title="Guardar borrador para continuar después"
             >
-              <Save className="w-3.5 h-3.5 text-slate-600" />
+              <Save className="w-3.5 h-3.5 text-blue-600" />
               Guardar Borrador
             </button>
 
-            <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+            <button
+              type="button"
+              onClick={onOpenSummary}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-extrabold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition-all cursor-pointer"
+              title="Revisar y exportar cuestionario en PDF"
+            >
+              <Eye className="w-3.5 h-3.5 text-slate-700" />
+              Revisar Cuestionario
+            </button>
+
+            <button
+              type="button"
+              onClick={onSendToAdmin}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md shadow-emerald-200 transition-all cursor-pointer"
+              title="Enviar cuestionario terminado al administrador"
+            >
+              <Send className="w-3.5 h-3.5 text-white" />
+              Enviar al Admin
+            </button>
+
+            <div className="h-4 w-px bg-slate-200 mx-0.5 hidden sm:block"></div>
 
             <div className="inline-flex rounded-lg bg-slate-100 p-0.5 border border-slate-200 text-xs font-medium">
               <button
@@ -114,15 +139,6 @@ export const FormTitleBanner: React.FC<FormTitleBannerProps> = ({
                 Vista Completa
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={onOpenSummary}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md shadow-blue-200 transition-all cursor-pointer"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              Revisar y Exportar
-            </button>
           </div>
         </div>
 
