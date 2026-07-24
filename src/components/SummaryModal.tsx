@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Printer, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Download, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import { QuestionnaireData } from '../types';
 import { saveResponseToSupabase } from '../lib/supabase';
 import { Logo } from './Logo';
@@ -18,6 +20,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
   onToast,
 }) => {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [synced, setSynced] = useState(false);
 
   // Auto-save to Supabase in the background whenever the summary modal opens
@@ -37,12 +40,61 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handlePrint = async () => {
+  const handleDownloadPDF = async () => {
     setIsSyncing(true);
+    setIsExporting(true);
     await saveResponseToSupabase(data);
     setIsSyncing(false);
     setSynced(true);
-    window.print();
+
+    const element = document.getElementById('printableSummary');
+    if (element) {
+      const cleanCompanyName = (data.companyName || 'Cliente').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Cuestionario_${cleanCompanyName}.pdf`;
+
+      try {
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+        });
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+        });
+
+        const imgProps = pdf.getImageProperties(imgData);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+        let heightLeft = pdfHeight;
+        let position = 0;
+        const pageHeight = pdf.internal.pageSize.getHeight();
+
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - pdfHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+          heightLeft -= pageHeight;
+        }
+
+        pdf.save(filename);
+        onToast('Documento PDF descargado.');
+      } catch (err) {
+        console.warn('Fallback al diálogo de impresión/guardado PDF del navegador:', err);
+        window.print();
+      }
+    } else {
+      window.print();
+    }
+    setIsExporting(false);
   };
 
   const generateMarkdown = (): string => {
@@ -225,13 +277,22 @@ ${
 
             <button
               type="button"
-              onClick={handlePrint}
-              disabled={isSyncing}
+              onClick={handleDownloadPDF}
+              disabled={isSyncing || isExporting}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50"
-              title="Exportar cuestionario a documento PDF"
+              title="Descargar cuestionario en PDF"
             >
-              <Printer className="w-4 h-4" />
-              Exportar Cuestionario a PDF
+              {isExporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Generando PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  <span>Descargar Cuestionario PDF</span>
+                </>
+              )}
             </button>
 
             <button
@@ -251,8 +312,7 @@ ${
             <div className="flex items-center gap-3">
               <Logo className="h-10 sm:h-12 w-auto" variant="light" />
               <div>
-                <h2 className="font-extrabold text-slate-900 text-lg tracking-tight">App Design</h2>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Cuestionario de Requerimientos de Software</p>
+                <p className="text-xs sm:text-sm text-slate-700 font-extrabold uppercase tracking-wider">Cuestionario de Requerimientos de Software</p>
               </div>
             </div>
             <div className="text-right text-xs text-slate-600">
