@@ -36,9 +36,9 @@ ALTER TABLE public.client_users ADD COLUMN IF NOT EXISTS company_name TEXT;
 
 -- 2. Tabla de Respuestas de Cuestionarios
 CREATE TABLE IF NOT EXISTS public.questionnaire_responses (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    client_id UUID REFERENCES public.client_users(id) ON DELETE SET NULL,
+    client_id TEXT,
     company_name TEXT NOT NULL,
     client_name TEXT NOT NULL,
     contact_email TEXT,
@@ -48,9 +48,17 @@ CREATE TABLE IF NOT EXISTS public.questionnaire_responses (
     notes TEXT
 );
 
+-- Asegurar tipo TEXT en columnas para evitar errores de tipo UUID al consultar o insertar
+DO $$ 
+BEGIN 
+  ALTER TABLE IF EXISTS public.questionnaire_responses ALTER COLUMN client_id TYPE TEXT USING client_id::text;
+  ALTER TABLE IF EXISTS public.questionnaire_responses ALTER COLUMN id TYPE TEXT USING id::text;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 -- 3. Tabla de Notificaciones del Sistema
 CREATE TABLE IF NOT EXISTS public.app_notifications (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     title TEXT NOT NULL,
     message TEXT NOT NULL,
@@ -58,12 +66,18 @@ CREATE TABLE IF NOT EXISTS public.app_notifications (
     type TEXT DEFAULT 'submission',
     recipient_role TEXT DEFAULT 'admin',
     client_email TEXT,
-    response_id UUID REFERENCES public.questionnaire_responses(id) ON DELETE CASCADE
+    response_id TEXT
 );
 
 -- Alteraciones para agregar columnas si la tabla ya existía
 ALTER TABLE public.app_notifications ADD COLUMN IF NOT EXISTS recipient_role TEXT DEFAULT 'admin';
 ALTER TABLE public.app_notifications ADD COLUMN IF NOT EXISTS client_email TEXT;
+DO $$ 
+BEGIN 
+  ALTER TABLE IF EXISTS public.app_notifications ALTER COLUMN response_id TYPE TEXT USING response_id::text;
+  ALTER TABLE IF EXISTS public.app_notifications ALTER COLUMN id TYPE TEXT USING id::text;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 -- 4. Tabla de Usuarios Administradores
 CREATE TABLE IF NOT EXISTS public.admin_users (
@@ -447,16 +461,32 @@ export async function saveResponseToSupabase(
     // Verificar si ya existe una respuesta para este cliente o correo
     let existingId: string | null = null;
     if (clientId || cleanEmail) {
-      let checkQuery = supabase.from('questionnaire_responses').select('id');
-      if (clientId) {
-        checkQuery = checkQuery.eq('client_id', clientId);
-      } else if (cleanEmail) {
-        checkQuery = checkQuery.eq('contact_email', cleanEmail);
-      }
+      try {
+        let checkQuery = supabase.from('questionnaire_responses').select('id');
+        if (clientId) {
+          checkQuery = checkQuery.eq('client_id', clientId);
+        } else if (cleanEmail) {
+          checkQuery = checkQuery.eq('contact_email', cleanEmail);
+        }
 
-      const { data: existingRows } = await checkQuery.order('created_at', { ascending: false }).limit(1);
-      if (existingRows && existingRows.length > 0) {
-        existingId = existingRows[0].id;
+        const { data: existingRows, error: checkErr } = await checkQuery.order('created_at', { ascending: false }).limit(1);
+        
+        if (checkErr && clientId && cleanEmail) {
+          // Si falló la consulta por client_id (ej. sintaxis de UUID), reintentar solo por correo
+          const { data: emailRows } = await supabase
+            .from('questionnaire_responses')
+            .select('id')
+            .eq('contact_email', cleanEmail)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (emailRows && emailRows.length > 0) {
+            existingId = emailRows[0].id;
+          }
+        } else if (existingRows && existingRows.length > 0) {
+          existingId = existingRows[0].id;
+        }
+      } catch (e) {
+        console.warn('Excepción consultando borrador previo:', e);
       }
     }
 
@@ -476,13 +506,14 @@ export async function saveResponseToSupabase(
         .eq('id', existingId)
         .select();
 
-      if (updateErr) {
-        console.warn('Error al actualizar borrador en Supabase, aplicando fallback local:', updateErr.message);
-        saveLocalDraftFallback(cleanData, clientId);
-        return { success: true, isLocalFallback: true, error: updateErr.message };
+      if (!updateErr && updateRes && updateRes.length > 0) {
+        resultRecord = updateRes[0];
+      } else if (updateErr) {
+        console.warn('Error al actualizar borrador en Supabase:', updateErr.message);
       }
-      resultRecord = updateRes ? updateRes[0] : null;
-    } else {
+    }
+
+    if (!resultRecord) {
       // Insertar nuevo registro
       const { data: insertRes, error: insertErr } = await supabase
         .from('questionnaire_responses')
@@ -500,11 +531,39 @@ export async function saveResponseToSupabase(
         .select();
 
       if (insertErr) {
-        console.warn('Error al insertar borrador en Supabase, aplicando fallback local:', insertErr.message);
-        saveLocalDraftFallback(cleanData, clientId);
-        return { success: true, isLocalFallback: true, error: insertErr.message };
+        console.warn('Error al insertar borrador en Supabase:', insertErr.message);
+        
+        // Si falló por incompatibilidad del tipo de client_id (UUID vs TEXT), reintentar sin client_id
+        if (insertErr.message.includes('uuid') || insertErr.message.includes('syntax')) {
+          const { data: retryRes, error: retryErr } = await supabase
+            .from('questionnaire_responses')
+            .insert([
+              {
+                client_id: null,
+                company_name: company,
+                client_name: clientName,
+                contact_email: cleanEmail,
+                contact_phone: phone,
+                data: cleanData,
+                status: 'nuevo',
+              },
+            ])
+            .select();
+
+          if (!retryErr && retryRes && retryRes.length > 0) {
+            resultRecord = retryRes[0];
+          } else {
+            console.warn('Reintento de inserción también falló:', retryErr?.message);
+            saveLocalDraftFallback(cleanData, clientId);
+            return { success: true, isLocalFallback: true, error: retryErr?.message || insertErr.message };
+          }
+        } else {
+          saveLocalDraftFallback(cleanData, clientId);
+          return { success: true, isLocalFallback: true, error: insertErr.message };
+        }
+      } else {
+        resultRecord = insertRes ? insertRes[0] : null;
       }
-      resultRecord = insertRes ? insertRes[0] : null;
     }
 
     saveLocalDraftFallback(cleanData, clientId);
@@ -551,17 +610,30 @@ export async function saveResponseToSupabase(
 function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string) {
   try {
     const localResponses = getLocalResponsesFallback();
-    const newRecord: QuestionnaireResponseRecord = {
-      id: 'resp-' + Date.now(),
+    const existingIndex = localResponses.findIndex(
+      (r) =>
+        (clientId && r.client_id === clientId) ||
+        (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase())
+    );
+
+    const updatedRecord: QuestionnaireResponseRecord = {
+      id: existingIndex >= 0 ? localResponses[existingIndex].id : 'resp-' + Date.now(),
       created_at: new Date().toISOString(),
+      client_id: clientId,
       company_name: data.companyName || 'Empresa Sin Nombre',
       client_name: data.clientName || 'Cliente No Especificado',
       contact_email: data.contactEmail || '',
       contact_phone: data.contactPhone || '',
       data: data,
-      status: 'nuevo',
+      status: existingIndex >= 0 ? localResponses[existingIndex].status : 'nuevo',
     };
-    saveLocalResponses([newRecord, ...localResponses]);
+
+    if (existingIndex >= 0) {
+      localResponses[existingIndex] = updatedRecord;
+      saveLocalResponses([...localResponses]);
+    } else {
+      saveLocalResponses([updatedRecord, ...localResponses]);
+    }
   } catch (e) {
     console.error('Error saving local fallback draft:', e);
   }
@@ -569,6 +641,8 @@ function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string) {
 
 // Helper para obtener todas las respuestas (para Admin)
 export async function fetchResponsesFromSupabase(): Promise<QuestionnaireResponseRecord[]> {
+  const localData = getLocalResponsesFallback();
+
   try {
     const { data, error } = await supabase
       .from('questionnaire_responses')
@@ -576,12 +650,25 @@ export async function fetchResponsesFromSupabase(): Promise<QuestionnaireRespons
       .order('created_at', { ascending: false });
 
     if (error || !data) {
-      return getLocalResponsesFallback();
+      console.warn('Error obteniendo respuestas de Supabase (usando local fallback):', error?.message);
+      return localData;
     }
 
-    return data as QuestionnaireResponseRecord[];
+    // Combinar respuestas de Supabase con respuestas locales que no estén sincronizadas aún
+    const supabaseIds = new Set(data.map((r: any) => String(r.id)));
+    const supabaseEmails = new Set(data.map((r: any) => r.contact_email?.toLowerCase()).filter(Boolean));
+
+    const unsyncedLocal = localData.filter(
+      (l) => !supabaseIds.has(String(l.id)) && (!l.contact_email || !supabaseEmails.has(l.contact_email.toLowerCase()))
+    );
+
+    const merged = [...data, ...unsyncedLocal] as QuestionnaireResponseRecord[];
+    // Sincronizar en localStorage para redundancia
+    saveLocalResponses(merged);
+    return merged;
   } catch (err) {
-    return getLocalResponsesFallback();
+    console.warn('Excepción obteniendo respuestas de Supabase:', err);
+    return localData;
   }
 }
 
