@@ -23,14 +23,18 @@ export const ClientNotificationsModal: React.FC<ClientNotificationsModalProps> =
   useEffect(() => {
     if (isOpen && currentClient?.email) {
       loadNotifs();
+      const interval = setInterval(() => {
+        loadNotifs(true);
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [isOpen, currentClient]);
 
-  const loadNotifs = async () => {
-    setIsLoading(true);
+  const loadNotifs = async (isBackground = false) => {
+    if (!isBackground) setIsLoading(true);
     const notifs = await fetchClientNotificationsFromSupabase(currentClient.email);
     setNotifications(notifs);
-    setIsLoading(false);
+    if (!isBackground) setIsLoading(false);
   };
 
   const handleMarkRead = async (id: string) => {

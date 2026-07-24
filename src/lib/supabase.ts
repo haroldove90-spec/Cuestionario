@@ -759,10 +759,15 @@ export async function deleteResponseFromSupabase(id: string) {
 export async function createAdminNotificationInSupabase(notif: AppNotification) {
   try {
     const localNotifs = getLocalNotificationsFallback();
-    saveLocalNotifications([notif, ...localNotifs]);
+    // Prevenir duplicados por ID
+    const exists = localNotifs.some((n) => n.id === notif.id);
+    if (!exists) {
+      saveLocalNotifications([notif, ...localNotifs]);
+    }
 
-    await supabase.from('app_notifications').insert([
+    const { error } = await supabase.from('app_notifications').insert([
       {
+        id: notif.id,
         title: notif.title,
         message: notif.message,
         type: notif.type || 'submission',
@@ -770,27 +775,46 @@ export async function createAdminNotificationInSupabase(notif: AppNotification) 
         client_email: notif.client_email || null,
         response_id: notif.response_id || null,
         read: false,
+        created_at: notif.created_at || new Date().toISOString(),
       },
     ]);
+
+    if (error) {
+      console.warn('Advertencia insertando notificación de admin en Supabase:', error.message);
+    }
   } catch (err) {
     console.warn('Error insertando notificación de admin en Supabase:', err);
   }
 }
 
-// Helper para obtener notificaciones
+// Helper para obtener notificaciones del Admin
 export async function fetchNotificationsFromSupabase(): Promise<AppNotification[]> {
+  const localData = getLocalNotificationsFallback();
+
   try {
     const { data, error } = await supabase
       .from('app_notifications')
       .select('*')
+      .eq('recipient_role', 'admin')
       .order('created_at', { ascending: false });
 
     if (error || !data) {
-      return getLocalNotificationsFallback();
+      console.warn('Error obteniendo notificaciones de admin de Supabase (usando local fallback):', error?.message);
+      return localData;
     }
-    return data as AppNotification[];
+
+    // Combinar notificaciones de Supabase con notificaciones locales no sincronizadas aún
+    const supabaseIds = new Set(data.map((n: any) => String(n.id)));
+    const unsyncedLocal = localData.filter((l) => !supabaseIds.has(String(l.id)));
+    const merged = [...data, ...unsyncedLocal] as AppNotification[];
+
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    saveLocalNotifications(merged);
+    return merged;
   } catch (e) {
-    return getLocalNotificationsFallback();
+    console.warn('Excepción obteniendo notificaciones:', e);
+    return localData;
   }
 }
 
@@ -853,9 +877,10 @@ export async function createClientNotificationInSupabase(
 ) {
   if (!clientEmail) return;
   const cleanEmail = clientEmail.trim().toLowerCase();
+  const notifId = 'notif-client-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
 
   const notifObj: AppNotification = {
-    id: 'notif-client-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+    id: notifId,
     title,
     message,
     created_at: new Date().toISOString(),
@@ -869,15 +894,19 @@ export async function createClientNotificationInSupabase(
   // Guardar en almacenamiento local para el cliente
   try {
     const localNotifs = getLocalClientNotifications(cleanEmail);
-    saveLocalClientNotifications(cleanEmail, [notifObj, ...localNotifs]);
+    const exists = localNotifs.some((n) => n.id === notifId);
+    if (!exists) {
+      saveLocalClientNotifications(cleanEmail, [notifObj, ...localNotifs]);
+    }
   } catch (e) {
     console.error('Error guardando notificación local de cliente:', e);
   }
 
   // Guardar en Supabase
   try {
-    await supabase.from('app_notifications').insert([
+    const { error } = await supabase.from('app_notifications').insert([
       {
+        id: notifId,
         title,
         message,
         type: 'status_change',
@@ -885,8 +914,13 @@ export async function createClientNotificationInSupabase(
         client_email: cleanEmail,
         response_id: responseId || null,
         read: false,
+        created_at: notifObj.created_at,
       },
     ]);
+
+    if (error) {
+      console.warn('Advertencia insertando notificación para cliente en Supabase:', error.message);
+    }
   } catch (err) {
     console.warn('Advertencia insertando notificación para cliente en Supabase:', err);
   }
@@ -898,6 +932,7 @@ export async function fetchClientNotificationsFromSupabase(
 ): Promise<AppNotification[]> {
   if (!clientEmail) return [];
   const cleanEmail = clientEmail.trim().toLowerCase();
+  const localData = getLocalClientNotifications(cleanEmail);
 
   try {
     const { data, error } = await supabase
@@ -907,12 +942,20 @@ export async function fetchClientNotificationsFromSupabase(
       .eq('client_email', cleanEmail)
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return getLocalClientNotifications(cleanEmail);
+    if (error || !data) {
+      return localData;
     }
-    return data as AppNotification[];
+
+    const supabaseIds = new Set(data.map((n: any) => String(n.id)));
+    const unsyncedLocal = localData.filter((l) => !supabaseIds.has(String(l.id)));
+    const merged = [...data, ...unsyncedLocal] as AppNotification[];
+
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    saveLocalClientNotifications(cleanEmail, merged);
+    return merged;
   } catch (e) {
-    return getLocalClientNotifications(cleanEmail);
+    return localData;
   }
 }
 

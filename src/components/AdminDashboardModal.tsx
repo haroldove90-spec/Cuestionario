@@ -102,13 +102,17 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadData();
+      const interval = setInterval(() => {
+        loadData(true); // Silent background refresh
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [isOpen]);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (isBackground = false) => {
+    if (!isBackground) setIsLoading(true);
 
-    // Fetch questionnaires and clients from Supabase
+    // Fetch questionnaires, clients and notifications from Supabase
     const fetchedResponses = await fetchResponsesFromSupabase();
     const fetchedClients = await fetchClientsFromSupabase();
     const fetchedNotifs = await fetchNotificationsFromSupabase();
@@ -117,7 +121,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setClients(fetchedClients);
     setNotifications(fetchedNotifs);
 
-    setIsLoading(false);
+    if (!isBackground) setIsLoading(false);
   };
 
   if (!isOpen) return null;
