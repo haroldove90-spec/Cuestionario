@@ -25,6 +25,8 @@ import { saveResponseToSupabase, fetchClientResponseFromSupabase } from './lib/s
 const STORAGE_KEY = 'management_system_questionnaire_draft_v1';
 const ADMIN_SESSION_KEY = 'management_system_admin_session_v1';
 const CLIENT_SESSION_KEY = 'management_system_client_session_v1';
+const CURRENT_SCREEN_KEY = 'management_system_current_screen_v1';
+const ADMIN_DASHBOARD_OPEN_KEY = 'management_system_admin_dashboard_open_v1';
 
 const SECTION_TITLES = [
   '1. Generalidades y Objetivos',
@@ -36,7 +38,18 @@ const SECTION_TITLES = [
 ];
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<'home' | 'questionnaire'>('home');
+  // Restore current screen from localStorage
+  const [currentScreen, setCurrentScreen] = useState<'home' | 'questionnaire'>(() => {
+    try {
+      const stored = localStorage.getItem(CURRENT_SCREEN_KEY);
+      if (stored === 'questionnaire' || stored === 'home') {
+        return stored;
+      }
+    } catch (e) {
+      console.error('Error loading current screen:', e);
+    }
+    return 'home';
+  });
 
   // Logged in client user
   const [currentClient, setCurrentClient] = useState<ClientUser | null>(() => {
@@ -88,14 +101,70 @@ export default function App() {
   const [isClientNotifsOpen, setIsClientNotifsOpen] = useState<boolean>(false);
   const [isClientQuestionnairesOpen, setIsClientQuestionnairesOpen] = useState<boolean>(false);
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState<boolean>(false);
-  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(false);
+
+  // Restore admin dashboard open state from localStorage
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(ADMIN_DASHBOARD_OPEN_KEY);
+      return stored === 'true';
+    } catch (e) {
+      console.error('Error loading admin dashboard state:', e);
+    }
+    return false;
+  });
+
   const [isSavingDraft, setIsSavingDraft] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auto-persist current screen
+  useEffect(() => {
+    try {
+      localStorage.setItem(CURRENT_SCREEN_KEY, currentScreen);
+    } catch (e) {
+      console.error('Error saving current screen:', e);
+    }
+  }, [currentScreen]);
+
+  // Auto-persist admin dashboard open state
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_DASHBOARD_OPEN_KEY, String(isAdminDashboardOpen));
+    } catch (e) {
+      console.error('Error saving admin dashboard state:', e);
+    }
+  }, [isAdminDashboardOpen]);
+
+  // Auto-persist client session
+  useEffect(() => {
+    try {
+      if (currentClient) {
+        localStorage.setItem(CLIENT_SESSION_KEY, JSON.stringify(currentClient));
+      } else {
+        localStorage.removeItem(CLIENT_SESSION_KEY);
+      }
+    } catch (e) {
+      console.error('Error persisting client session:', e);
+    }
+  }, [currentClient]);
+
+  // Auto-persist admin session
+  useEffect(() => {
+    try {
+      if (adminUser) {
+        localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(adminUser));
+      } else {
+        localStorage.removeItem(ADMIN_SESSION_KEY);
+      }
+    } catch (e) {
+      console.error('Error persisting admin session:', e);
+    }
+  }, [adminUser]);
 
   const handleAdminLoginSuccess = (user: AdminUser) => {
     setAdminUser(user);
     try {
       localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(user));
+      localStorage.setItem(ADMIN_DASHBOARD_OPEN_KEY, 'true');
     } catch (e) {
       console.error('Error saving admin session:', e);
     }
@@ -106,6 +175,8 @@ export default function App() {
   const handleAdminLogout = () => {
     setAdminUser(null);
     localStorage.removeItem(ADMIN_SESSION_KEY);
+    localStorage.removeItem(ADMIN_DASHBOARD_OPEN_KEY);
+    localStorage.setItem(CURRENT_SCREEN_KEY, 'home');
     setIsAdminDashboardOpen(false);
     setIsAdminLoginOpen(false);
     setIsSummaryOpen(false);
@@ -116,8 +187,11 @@ export default function App() {
   const handleClientLogout = () => {
     setCurrentClient(null);
     localStorage.removeItem(CLIENT_SESSION_KEY);
+    localStorage.setItem(CURRENT_SCREEN_KEY, 'home');
     setIsClientAuthOpen(false);
     setIsSummaryOpen(false);
+    setIsClientQuestionnairesOpen(false);
+    setIsClientNotifsOpen(false);
     setCurrentScreen('home');
     showToast('Sesión de cliente cerrada.');
   };
@@ -126,6 +200,7 @@ export default function App() {
     setCurrentClient(client);
     try {
       localStorage.setItem(CLIENT_SESSION_KEY, JSON.stringify(client));
+      localStorage.setItem(CURRENT_SCREEN_KEY, 'questionnaire');
     } catch (e) {
       console.error('Error saving client session:', e);
     }
