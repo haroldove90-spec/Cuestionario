@@ -480,7 +480,8 @@ export function generateUUID(): string {
 export async function saveResponseToSupabase(
   data: QuestionnaireData,
   clientId?: string,
-  status: 'borrador' | 'nuevo' | 'en_revision' | 'aprobado' | 'completado' = 'borrador'
+  status: 'borrador' | 'nuevo' | 'en_revision' | 'aprobado' | 'completado' = 'borrador',
+  skipNotification = false
 ): Promise<{ success: boolean; result?: any; isLocalFallback?: boolean; error?: string }> {
   // Guardar datos completos con todos los archivos adjuntos y URLs de Supabase Storage intactos
   const cleanData = data;
@@ -617,22 +618,24 @@ export async function saveResponseToSupabase(
     const insertedId = resultRecord?.id || generatedId;
 
     // Crear notificación para el admin
-    try {
-      const adminNotif: AppNotification = {
-        id: generateUUID(),
-        title: status === 'nuevo' ? '¡Nuevo Cuestionario Enviado!' : '¡Cuestionario Guardado / Actualizado!',
-        message: `El cliente "${clientName}" (${company}) ha ${status === 'nuevo' ? 'enviado para revisión' : 'guardado'} su cuestionario con información actualizada.`,
-        created_at: new Date().toISOString(),
-        read: false,
-        type: 'submission',
-        recipient_role: 'admin',
-        client_email: cleanEmail,
-        response_id: insertedId,
-      };
+    if (!skipNotification) {
+      try {
+        const adminNotif: AppNotification = {
+          id: generateUUID(),
+          title: status === 'nuevo' ? '¡Nuevo Cuestionario Enviado!' : '¡Cuestionario Guardado / Actualizado!',
+          message: `El cliente "${clientName}" (${company}) ha ${status === 'nuevo' ? 'enviado para revisión' : 'guardado'} su cuestionario con información actualizada.`,
+          created_at: new Date().toISOString(),
+          read: false,
+          type: 'submission',
+          recipient_role: 'admin',
+          client_email: cleanEmail,
+          response_id: insertedId,
+        };
 
-      await createAdminNotificationInSupabase(adminNotif);
-    } catch (notifErr) {
-      console.warn('No se pudo crear notificación para admin:', notifErr);
+        await createAdminNotificationInSupabase(adminNotif);
+      } catch (notifErr) {
+        console.warn('No se pudo crear notificación para admin:', notifErr);
+      }
     }
 
     return { success: true, result: resultRecord };

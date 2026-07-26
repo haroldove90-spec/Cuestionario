@@ -235,14 +235,23 @@ export default function App() {
     }
   }, [currentClient?.id]);
 
-  // Auto-save to localStorage on data change
+  // Auto-save to localStorage & debounced draft sync to Supabase on data change
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
-      console.error('Error auto-saving:', e);
+      console.error('Error auto-saving to localStorage:', e);
     }
-  }, [data]);
+
+    const timer = setTimeout(() => {
+      // Sincronizar automáticamente borrador con Supabase si hay datos identificativos
+      if (data.companyName?.trim() || data.clientName?.trim() || data.contactEmail?.trim() || currentClient) {
+        saveResponseToSupabase(data, currentClient?.id, 'borrador', true);
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [data, currentClient?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
