@@ -23,7 +23,7 @@ async function convertImageUrlToBase64(url: string): Promise<string> {
     const blob = await response.blob();
     return await new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string || url);
+      reader.onloadend = () => resolve((reader.result as string) || url);
       reader.onerror = () => resolve(url);
       reader.readAsDataURL(blob);
     });
@@ -54,9 +54,9 @@ async function convertImageUrlToBase64(url: string): Promise<string> {
 }
 
 /**
- * Wrapper con timeout para garantizar que la conversión de imágenes nunca congele la exportación
+ * Wrapper con timeout para garantizar que la conversión de imágenes no bloquee el proceso
  */
-function convertImageUrlToBase64WithTimeout(url: string, timeoutMs = 2500): Promise<string> {
+function convertImageUrlToBase64WithTimeout(url: string, timeoutMs = 2000): Promise<string> {
   return new Promise((resolve) => {
     let resolved = false;
     const timer = setTimeout(() => {
@@ -93,7 +93,7 @@ export async function exportElementToPdf({
 }: ExportPdfOptions): Promise<boolean> {
   onStart?.();
 
-  let cloneContainer: HTMLDivElement | null = null;
+  let outerWrapper: HTMLDivElement | null = null;
 
   try {
     const originalElement = document.getElementById(elementId);
@@ -101,28 +101,37 @@ export async function exportElementToPdf({
       throw new Error(`No se encontró el elemento a exportar con ID #${elementId}`);
     }
 
-    // 1. Crear contenedor de clonación fuera de pantalla, con opacidad 1 (vital para html2canvas)
-    cloneContainer = document.createElement('div');
-    cloneContainer.style.position = 'fixed';
+    // 1. Crear un contenedor outer clipped invisible para no parpadear en la pantalla
+    outerWrapper = document.createElement('div');
+    outerWrapper.style.position = 'fixed';
+    outerWrapper.style.top = '0';
+    outerWrapper.style.left = '0';
+    outerWrapper.style.width = '0';
+    outerWrapper.style.height = '0';
+    outerWrapper.style.overflow = 'hidden';
+    outerWrapper.style.zIndex = '-999999';
+    outerWrapper.style.pointerEvents = 'none';
+
+    // 2. Contenedor interno clonado a ancho A4 estándar (800px ~ 190mm a 96dpi)
+    const cloneContainer = document.createElement('div');
+    cloneContainer.style.position = 'absolute';
     cloneContainer.style.top = '0';
-    cloneContainer.style.left = '-9999px'; // Posicionado fuera del área visible
-    cloneContainer.style.width = '800px'; // Ancho A4 estandarizado (~190mm a 96DPI)
+    cloneContainer.style.left = '0';
+    cloneContainer.style.width = '800px';
     cloneContainer.style.backgroundColor = '#ffffff';
     cloneContainer.style.color = '#0f172a';
     cloneContainer.style.padding = '24px';
     cloneContainer.style.boxSizing = 'border-box';
-    cloneContainer.style.zIndex = '-999999';
-    cloneContainer.style.opacity = '1'; // IMPORTANTE: Opacidad 1.0 para que html2canvas dibuje todos los colores y textos
-    cloneContainer.style.pointerEvents = 'none';
+    cloneContainer.style.opacity = '1';
 
-    // 2. Clonar el elemento
+    // 3. Clonar el contenido original
     const clonedContent = originalElement.cloneNode(true) as HTMLElement;
     clonedContent.style.maxHeight = 'none';
     clonedContent.style.height = 'auto';
     clonedContent.style.overflow = 'visible';
     clonedContent.style.width = '100%';
 
-    // 3. Reemplazar textareas e inputs en el clon por divs estáticos con su texto completo
+    // 4. Convertir textareas e inputs en el clon a bloques de texto estáticos
     const textareas = Array.from(clonedContent.querySelectorAll('textarea'));
     textareas.forEach((ta) => {
       const val = (ta as HTMLTextAreaElement).value || ta.textContent || '';
@@ -141,14 +150,14 @@ export async function exportElementToPdf({
       inp.parentNode?.replaceChild(span, inp);
     });
 
-    // 4. Quitar botones, selects interactivos y elementos no imprimibles
+    // 5. Ocultar botones y controles interactivos sin clase keep-print
     clonedContent.querySelectorAll('.no-print, button, select').forEach((node) => {
       if (!node.classList.contains('keep-print')) {
         (node as HTMLElement).style.display = 'none';
       }
     });
 
-    // 5. Eliminar restricciones de scroll y overflow en todos los descendientes
+    // 6. Remover scroll / overflow en todo el árbol de hijos
     clonedContent.querySelectorAll('*').forEach((node) => {
       const el = node as HTMLElement;
       el.style.maxHeight = 'none';
@@ -158,17 +167,48 @@ export async function exportElementToPdf({
       }
     });
 
-    // 6. Procesar y restringir tamaño de TODAS las imágenes con timeout de protección
+    // 7. Ajustar y fijar colores de SVGs (Lucide icons) para que html2canvas los dibuje sin fallar
+    const svgs = Array.from(clonedContent.querySelectorAll('svg'));
+    svgs.forEach((svg) => {
+      try {
+        const computedStyle = window.getComputedStyle(svg);
+        const stroke = computedStyle.stroke;
+        const fill = computedStyle.fill;
+        if (stroke && stroke !== 'none' && stroke !== 'rgba(0, 0, 0, 0)') {
+          svg.setAttribute('stroke', stroke);
+        }
+        if (fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)') {
+          svg.setAttribute('fill', fill);
+        }
+        if (!svg.getAttribute('width')) {
+          const w = parseFloat(computedStyle.width) || 18;
+          svg.setAttribute('width', `${w}px`);
+        }
+        if (!svg.getAttribute('height')) {
+          const h = parseFloat(computedStyle.height) || 18;
+          svg.setAttribute('height', `${h}px`);
+        }
+      } catch {
+        // Ignorar errores de computación si el SVG es dinámico
+      }
+    });
+
+    // 8. Convertir todas las imágenes a Data URLs (base64)
     const imgs = Array.from(clonedContent.querySelectorAll('img'));
     await Promise.all(
       imgs.map(async (img) => {
         const originalSrc = img.src;
         if (originalSrc) {
-          const base64Src = await convertImageUrlToBase64WithTimeout(originalSrc, 2500);
+          const base64Src = await convertImageUrlToBase64WithTimeout(originalSrc, 2000);
           img.src = base64Src;
         }
         img.removeAttribute('srcset');
-        if (img.classList.contains('shrink-0') || img.alt?.toLowerCase().includes('logo') || img.className.includes('h-10') || img.className.includes('h-12')) {
+        if (
+          img.classList.contains('shrink-0') ||
+          img.alt?.toLowerCase().includes('logo') ||
+          img.className.includes('h-10') ||
+          img.className.includes('h-12')
+        ) {
           img.style.maxHeight = '48px';
           img.style.height = '44px';
           img.style.width = 'auto';
@@ -181,32 +221,38 @@ export async function exportElementToPdf({
     );
 
     cloneContainer.appendChild(clonedContent);
-    document.body.appendChild(cloneContainer);
+    outerWrapper.appendChild(cloneContainer);
+    document.body.appendChild(outerWrapper);
 
-    // Pequeña pausa para reflow del navegador
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    // Pequeño delay de reflow
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // 7. Capturar el contenedor usando html2canvas
-    const canvas = await html2canvas(cloneContainer, {
-      scale: 2, // Calidad alta (300 DPI aprox)
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-      windowWidth: 800,
-    });
+    // 9. Renderizar canvas con timeout de seguridad y useCORS: false
+    const canvas = await Promise.race([
+      html2canvas(cloneContainer, {
+        scale: 2,
+        useCORS: false, // Las imágenes ya son base64, desactiva la creación de iframes CORS que se cuelgan
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 800,
+      }),
+      new Promise<HTMLCanvasElement>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout al procesar el lienzo del documento PDF')), 10000)
+      ),
+    ]);
 
-    // Remover el contenedor clon del DOM
-    if (cloneContainer && cloneContainer.parentNode) {
-      cloneContainer.parentNode.removeChild(cloneContainer);
-      cloneContainer = null;
+    // Eliminar el wrapper del DOM
+    if (outerWrapper && outerWrapper.parentNode) {
+      outerWrapper.parentNode.removeChild(outerWrapper);
+      outerWrapper = null;
     }
 
     if (!canvas || canvas.width === 0 || canvas.height === 0) {
-      throw new Error('No se pudo renderizar la captura del documento.');
+      throw new Error('No se pudo generar la imagen del documento.');
     }
 
-    // 8. Crear PDF A4 (210mm x 297mm) con jsPDF
+    // 10. Construir el documento A4
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -216,9 +262,9 @@ export async function exportElementToPdf({
 
     const pageWidth = 210; // mm
     const pageHeight = 297; // mm
-    const margin = 10; // mm
-    const printableWidth = pageWidth - margin * 2; // 190 mm
-    const printableHeight = pageHeight - margin * 2; // 277 mm
+    const margin = 8; // mm
+    const printableWidth = pageWidth - margin * 2; // 194 mm
+    const printableHeight = pageHeight - margin * 2; // 281 mm
 
     const imgWidthPx = canvas.width;
     const imgHeightPx = canvas.height;
@@ -260,7 +306,7 @@ export async function exportElementToPdf({
         );
       }
 
-      const pageDataUrl = pageCanvas.toDataURL('image/jpeg', 0.92);
+      const pageDataUrl = pageCanvas.toDataURL('image/jpeg', 0.94);
       const chunkHeightMm = chunkHeightPx * mmPerPx;
 
       pdf.addImage(pageDataUrl, 'JPEG', margin, margin, printableWidth, chunkHeightMm);
@@ -268,46 +314,78 @@ export async function exportElementToPdf({
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184); // Slate 400
       pdf.text(
-        `Página ${pageIndex + 1} de ${totalPages} • Cuestionario de Requerimientos de Software`,
+        `Página ${pageIndex + 1} de ${totalPages} • Documento de Requerimientos de Software`,
         margin,
-        pageHeight - 4
+        pageHeight - 3
       );
 
       renderedHeightPx += chunkHeightPx;
       pageIndex++;
     }
 
-    // 9. DESCARGA DIRECTA DEL ARCHIVO PDF AL DISPOSITIVO (BLOB + LINK DOWNLOAD + SAVE FALLBACK)
-    const pdfBlob = pdf.output('blob');
-    const blobUrl = URL.createObjectURL(pdfBlob);
+    // 11. DISPARAR DESCARGA CON MÚLTIPLES MÉTODOS DE FALLBACK
+    let downloaded = false;
 
-    const downloadLink = document.createElement('a');
-    downloadLink.href = blobUrl;
-    downloadLink.download = filename;
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-
+    // Método A: pdf.save de jsPDF
     try {
       pdf.save(filename);
-    } catch (saveErr) {
-      console.warn('Ejecutado fallback de descarga para PDF:', saveErr);
+      downloaded = true;
+    } catch (e) {
+      console.warn('Fallback: pdf.save falló:', e);
     }
 
-    setTimeout(() => {
-      if (downloadLink.parentNode) {
-        downloadLink.parentNode.removeChild(downloadLink);
+    // Método B: Generación de Blob y click en enlace <a>
+    try {
+      const pdfBlob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = blobUrl;
+      downloadAnchor.download = filename;
+      downloadAnchor.setAttribute('download', filename);
+      downloadAnchor.style.display = 'none';
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloaded = true;
+
+      setTimeout(() => {
+        if (downloadAnchor.parentNode) {
+          downloadAnchor.parentNode.removeChild(downloadAnchor);
+        }
+        URL.revokeObjectURL(blobUrl);
+      }, 12000);
+    } catch (e) {
+      console.warn('Fallback: Enlace Blob falló:', e);
+    }
+
+    // Método C: Data URI directo si lo anterior falló en navegadores restringidos
+    if (!downloaded) {
+      try {
+        const dataUri = pdf.output('datauristring');
+        const downloadAnchor2 = document.createElement('a');
+        downloadAnchor2.href = dataUri;
+        downloadAnchor2.download = filename;
+        downloadAnchor2.setAttribute('download', filename);
+        downloadAnchor2.style.display = 'none';
+        document.body.appendChild(downloadAnchor2);
+        downloadAnchor2.click();
+
+        setTimeout(() => {
+          if (downloadAnchor2.parentNode) {
+            downloadAnchor2.parentNode.removeChild(downloadAnchor2);
+          }
+        }, 5000);
+      } catch (e) {
+        console.warn('Fallback: DataURI falló:', e);
       }
-      URL.revokeObjectURL(blobUrl);
-    }, 15000);
+    }
 
     onFinish?.();
     return true;
   } catch (err: any) {
-    console.error('Error durante la generación y descarga del PDF:', err);
+    console.error('Error durante la exportación a PDF:', err);
 
-    if (cloneContainer && cloneContainer.parentNode) {
-      cloneContainer.parentNode.removeChild(cloneContainer);
+    if (outerWrapper && outerWrapper.parentNode) {
+      outerWrapper.parentNode.removeChild(outerWrapper);
     }
 
     onError?.(err);
