@@ -1308,72 +1308,199 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                 </h4>
 
                 {/* Section 1 */}
-                <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                  <h5 className="font-bold text-xs text-blue-700">Sección 1: Giro y Objetivos</h5>
-                  <p><strong>Actividad:</strong> {selectedRecord.data?.section1?.mainActivity || 'No especificado'}</p>
-                  <p><strong>Objetivo Principal:</strong> {selectedRecord.data?.section1?.mainObjective || 'No especificado'}</p>
-                  <p><strong>Problemas Actuales:</strong> {selectedRecord.data?.section1?.painPoints || 'No especificado'}</p>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <h5 className="font-extrabold text-xs text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] flex items-center justify-center font-bold">1</span>
+                    Sección 1: Giro y Objetivos de la Empresa
+                  </h5>
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    <p><strong>Actividad / Giro:</strong> {selectedRecord.data?.section1?.mainActivity || 'No especificado'}</p>
+                    <p><strong>Objetivo Principal:</strong> {selectedRecord.data?.section1?.mainObjective || 'No especificado'}</p>
+                    <p><strong>Dolor / Problemas a Resolver:</strong> {selectedRecord.data?.section1?.painPoints || 'No especificado'}</p>
+                  </div>
                 </div>
 
                 {/* Section 2 */}
-                <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                  <h5 className="font-bold text-xs text-blue-700">Sección 2: Usuarios y Roles</h5>
-                  <p><strong>Total Usuarios Estimados:</strong> {selectedRecord.data?.section2?.totalUsers || 'No especificado'}</p>
-                  <p><strong>Roles Definidos:</strong> {selectedRecord.data?.section2?.rolesList?.map(r => r.roleName).join(', ') || 'Ninguno'}</p>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <h5 className="font-extrabold text-xs text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] flex items-center justify-center font-bold">2</span>
+                    Sección 2: Estructura de Usuarios y Roles
+                  </h5>
+                  <div className="space-y-2 text-xs text-slate-700">
+                    <p><strong>Total Usuarios Estimados:</strong> <span className="font-bold text-slate-900">{selectedRecord.data?.section2?.totalUsers || 'No especificado'}</span></p>
+                    {selectedRecord.data?.section2?.rolesList && selectedRecord.data.section2.rolesList.length > 0 ? (
+                      <div>
+                        <strong className="block mb-1 text-slate-900">Roles Definidos y Funciones:</strong>
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {selectedRecord.data.section2.rolesList.map((r, idx) => (
+                            <div key={idx} className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                              <span className="font-extrabold text-slate-900">{r.roleName}:</span>{' '}
+                              <span className="text-slate-600">{r.functions || 'Sin descripción de funciones'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p><strong>Roles Definidos:</strong> Ninguno</p>
+                    )}
+                    {selectedRecord.data?.section2?.securityRestrictions && (
+                      <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-amber-900">
+                        <strong className="block mb-0.5">Restricciones de Seguridad:</strong>
+                        <p>{selectedRecord.data.section2.securityRestrictions}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Section 3 */}
-                <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                  <h5 className="font-bold text-xs text-blue-700">Sección 3: Proceso Diario y Notificaciones</h5>
-                  <p><strong>Proceso Diario:</strong> {selectedRecord.data?.section3?.dailyProcessSteps || 'No especificado'}</p>
-                  <p><strong>Documentos:</strong> {selectedRecord.data?.section3?.currentDocuments?.join(', ') || 'Ninguno'}</p>
-                  {selectedRecord.data?.section3?.attachedFiles && selectedRecord.data.section3.attachedFiles.length > 0 && (
-                    <div className="pt-1.5 pb-1">
-                      <p className="font-bold text-slate-900 mb-1">Archivos y documentos adjuntados ({selectedRecord.data.section3.attachedFiles.length}):</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedRecord.data.section3.attachedFiles.map((file) => (
-                          <a
-                            key={file.id}
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                            title="Ver / Descargar archivo"
-                          >
-                            <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span className="truncate max-w-[180px]">{file.name}</span>
-                            <ExternalLink className="w-3 h-3 text-emerald-600 shrink-0 ml-0.5" />
-                          </a>
-                        ))}
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <h5 className="font-extrabold text-xs text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] flex items-center justify-center font-bold">3</span>
+                    Sección 3: Proceso Diario, Documentos y Notificaciones
+                  </h5>
+                  <div className="space-y-2 text-xs text-slate-700">
+                    <div>
+                      <strong className="block mb-1 text-slate-900">Pasos del Proceso Diario:</strong>
+                      <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 font-mono text-[11px] whitespace-pre-wrap text-slate-800">
+                        {selectedRecord.data?.section3?.dailyProcessSteps || 'No especificado'}
                       </div>
                     </div>
-                  )}
-                  <p><strong>Requiere Notificaciones:</strong> {selectedRecord.data?.section3?.requiresNotifications ? 'Sí' : 'No'}</p>
-                  <p><strong>Canales:</strong> {selectedRecord.data?.section3?.notificationChannels?.join(', ') || 'Ninguno'}</p>
+                    <div>
+                      <strong className="text-slate-900">Documentos Manejados:</strong>{' '}
+                      {selectedRecord.data?.section3?.currentDocuments && selectedRecord.data.section3.currentDocuments.length > 0
+                        ? selectedRecord.data.section3.currentDocuments.join(', ')
+                        : 'Ninguno'}
+                      {selectedRecord.data?.section3?.customDocuments ? ` (${selectedRecord.data.section3.customDocuments})` : ''}
+                    </div>
+
+                    {selectedRecord.data?.section3?.attachedFiles && selectedRecord.data.section3.attachedFiles.length > 0 && (
+                      <div className="pt-1.5 pb-1">
+                        <p className="font-extrabold text-slate-900 mb-1">Archivos y documentos adjuntados ({selectedRecord.data.section3.attachedFiles.length}):</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedRecord.data.section3.attachedFiles.map((file) => (
+                            <a
+                              key={file.id}
+                              href={file.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              title="Ver / Descargar archivo"
+                            >
+                              <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="truncate max-w-[180px]">{file.name}</span>
+                              <ExternalLink className="w-3 h-3 text-emerald-600 shrink-0 ml-0.5" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-1 border-t border-slate-100">
+                      <p>
+                        <strong>Notificaciones Requeridas:</strong>{' '}
+                        <span className={`font-bold ${selectedRecord.data?.section3?.requiresNotifications ? 'text-emerald-700' : 'text-slate-500'}`}>
+                          {selectedRecord.data?.section3?.requiresNotifications ? 'Sí' : 'No'}
+                        </span>
+                      </p>
+                      {selectedRecord.data?.section3?.requiresNotifications && (
+                        <div className="mt-1 space-y-1 pl-2 border-l-2 border-blue-400">
+                          <p><strong>Canales:</strong> {selectedRecord.data?.section3?.notificationChannels?.join(', ') || 'Sin canales'}</p>
+                          <p><strong>Eventos/Detalle:</strong> {selectedRecord.data?.section3?.notificationDetails || 'Sin especificar'}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Section 4 */}
-                <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                  <h5 className="font-bold text-xs text-blue-700">Sección 4: Inventario y Datos</h5>
-                  <p><strong>Maneja Inventario:</strong> {selectedRecord.data?.section4?.handlesInventory ? 'Sí' : 'No'}</p>
-                  <p><strong>Productos Aprox:</strong> {selectedRecord.data?.section4?.approxProducts || 'N/A'}</p>
-                  <p><strong>Campos de Clientes:</strong> {selectedRecord.data?.section4?.clientFields?.join(', ') || 'Básicos'}</p>
-                  <p><strong>Rastrea Gastos/Proveedores:</strong> {selectedRecord.data?.section4?.trackExpensesAndSuppliers ? 'Sí' : 'No'}</p>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <h5 className="font-extrabold text-xs text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] flex items-center justify-center font-bold">4</span>
+                    Sección 4: Manejo de Información, Inventario y Datos
+                  </h5>
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    <p>
+                      <strong>Maneja Inventario / Catálogo:</strong>{' '}
+                      <span className="font-bold text-slate-900">{selectedRecord.data?.section4?.handlesInventory ? 'Sí' : 'No'}</span>
+                    </p>
+                    {selectedRecord.data?.section4?.handlesInventory && (
+                      <div className="pl-2 border-l-2 border-blue-200 space-y-1">
+                        <p><strong>Productos Aprox / SKUs:</strong> {selectedRecord.data?.section4?.approxProducts || 'N/A'}</p>
+                        <p><strong>Maneja Variaciones (tallas, colores):</strong> {selectedRecord.data?.section4?.hasVariations ? `Sí (${selectedRecord.data?.section4?.variationDetails || 'Sin detalles'})` : 'No'}</p>
+                      </div>
+                    )}
+                    <p>
+                      <strong>Campos Requeridos de Clientes:</strong>{' '}
+                      {selectedRecord.data?.section4?.clientFields?.join(', ') || 'Básicos'}
+                      {selectedRecord.data?.section4?.customClientFields ? ` (${selectedRecord.data.section4.customClientFields})` : ''}
+                    </p>
+                    <p>
+                      <strong>Rastrea Gastos y Proveedores:</strong>{' '}
+                      {selectedRecord.data?.section4?.trackExpensesAndSuppliers ? `Sí (${selectedRecord.data?.section4?.expenseSupplierDetails || 'Sin detalle'})` : 'No'}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Section 5 */}
-                <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                  <h5 className="font-bold text-xs text-blue-700">Sección 5: Dashboard y Reportes</h5>
-                  <p><strong>Indicadores en Pantalla:</strong> {selectedRecord.data?.section5?.dashboardWidgets?.join(', ') || 'Ninguno'}</p>
-                  <p><strong>Reportes Solicitados:</strong> {selectedRecord.data?.section5?.requiredReports?.join(', ') || 'Ninguno'}</p>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <h5 className="font-extrabold text-xs text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] flex items-center justify-center font-bold">5</span>
+                    Sección 5: Dashboard e Indicadores
+                  </h5>
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    <p>
+                      <strong>Indicadores en Pantalla (Widgets):</strong>{' '}
+                      {selectedRecord.data?.section5?.dashboardWidgets?.join(', ') || 'Ninguno'}
+                      {selectedRecord.data?.section5?.customDashboardWidgets ? ` (${selectedRecord.data.section5.customDashboardWidgets})` : ''}
+                    </p>
+                    <p>
+                      <strong>Reportes Solicitados:</strong>{' '}
+                      {selectedRecord.data?.section5?.requiredReports?.join(', ') || 'Ninguno'}
+                      {selectedRecord.data?.section5?.customReports ? ` (${selectedRecord.data.section5.customReports})` : ''}
+                    </p>
+                    {selectedRecord.data?.section5?.exportFormats && selectedRecord.data.section5.exportFormats.length > 0 && (
+                      <p><strong>Formatos de Exportación:</strong> {selectedRecord.data.section5.exportFormats.join(', ')}</p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Section 6 */}
-                <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-1">
-                  <h5 className="font-bold text-xs text-blue-700">Sección 6: Equipos e Integraciones</h5>
-                  <p><strong>Dispositivos:</strong> {selectedRecord.data?.section6?.primaryDevices?.join(', ') || 'No especificado'}</p>
-                  <p><strong>Integraciones Requeridas:</strong> {selectedRecord.data?.section6?.requiredIntegrations?.join(', ') || 'Ninguna'}</p>
-                  <p><strong>Tiene Datos Previos a Migrar:</strong> {selectedRecord.data?.section6?.hasExistingData ? 'Sí' : 'No'}</p>
+                <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <h5 className="font-extrabold text-xs text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-800 text-[10px] flex items-center justify-center font-bold">6</span>
+                    Sección 6: Aspectos Técnicos, Integraciones y Migración
+                  </h5>
+                  <div className="space-y-2 text-xs text-slate-700">
+                    <p>
+                      <strong>Dispositivos Principales:</strong>{' '}
+                      {selectedRecord.data?.section6?.primaryDevices?.join(', ') || 'No especificado'}
+                      {selectedRecord.data?.section6?.customDevices ? ` (${selectedRecord.data.section6.customDevices})` : ''}
+                    </p>
+                    <div>
+                      <strong className="text-slate-900 block mb-0.5">Integraciones y Herramientas a Conectar:</strong>
+                      <p className="text-slate-800 font-medium">
+                        {selectedRecord.data?.section6?.requiredIntegrations?.join(', ') || 'Ninguna seleccionada'}
+                      </p>
+                      {selectedRecord.data?.section6?.customIntegrations && (
+                        <div className="mt-1.5 p-2 bg-blue-50/80 rounded-lg border border-blue-200 text-blue-950 font-medium">
+                          <strong className="block text-[11px] text-blue-900 mb-0.5">Otras herramientas / Sistemas heredados a conectar:</strong>
+                          <p className="whitespace-pre-wrap">{selectedRecord.data.section6.customIntegrations}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <strong className="text-slate-900">Tiene Base de Datos / Excel a Migrar:</strong>{' '}
+                      <span className={`font-bold ${selectedRecord.data?.section6?.hasExistingData ? 'text-emerald-700' : 'text-slate-500'}`}>
+                        {selectedRecord.data?.section6?.hasExistingData ? 'Sí' : 'No'}
+                      </span>
+                      {selectedRecord.data?.section6?.hasExistingData && selectedRecord.data?.section6?.existingDataDetails && (
+                        <div className="mt-1.5 p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-950 font-medium">
+                          <strong className="block text-[11px] text-emerald-900 mb-0.5">Información actual disponible para carga inicial:</strong>
+                          <p className="whitespace-pre-wrap text-slate-800">{selectedRecord.data.section6.existingDataDetails}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
