@@ -465,6 +465,17 @@ export async function fetchClientResponseFromSupabase(
   return null;
 }
 
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 // Helper para guardar respuesta / borrador en Supabase (guarda borradores o registra nuevos envíos en el historial)
 export async function saveResponseToSupabase(
   data: QuestionnaireData,
@@ -477,6 +488,7 @@ export async function saveResponseToSupabase(
   const company = cleanData.companyName || 'Empresa Sin Nombre';
   const clientName = cleanData.clientName || 'Cliente No Especificado';
   const phone = cleanData.contactPhone || '';
+  const generatedId = generateUUID();
 
   try {
     let resultRecord: any = null;
@@ -528,8 +540,9 @@ export async function saveResponseToSupabase(
     if (!resultRecord) {
       const newCreatedAt = new Date().toISOString();
 
-      // Intento 1: Inserción limpia dejando que Supabase autogenere el ID según la definición de su tabla (UUID o TEXT)
+      // Intento 1: Inserción con UUID válido para la columna ID (funciona para UUID y TEXT en Supabase)
       const payload1: any = {
+        id: generatedId,
         company_name: company,
         client_name: clientName,
         contact_email: cleanEmail,
@@ -552,8 +565,9 @@ export async function saveResponseToSupabase(
       } else if (insertErr) {
         console.warn('Intento 1 de inserción en Supabase falló:', insertErr.message);
 
-        // Intento 2: Si falló por client_id o id de tipo estricto, reintentar omitiendo client_id
+        // Intento 2: Si falló por client_id (ej. tipo de columna UUID vs TEXT), reintentar omitiendo client_id
         const payload2: any = {
+          id: generatedId,
           company_name: company,
           client_name: clientName,
           contact_email: cleanEmail,
@@ -571,12 +585,8 @@ export async function saveResponseToSupabase(
         if (!retryErr2 && retryRes2 && retryRes2.length > 0) {
           resultRecord = retryRes2[0];
         } else {
-          console.warn('Intento 2 de inserción también falló:', retryErr2?.message);
-
-          // Intento 3: Reintentar pasando ID explicito por si la tabla no tiene valor por defecto
-          const generatedId = 'resp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+          // Intento 3: Reintentar sin pasar ID explícito (por si la tabla autogenera ID)
           const payload3: any = {
-            id: generatedId,
             company_name: company,
             client_name: clientName,
             contact_email: cleanEmail,
@@ -602,14 +612,14 @@ export async function saveResponseToSupabase(
       }
     }
 
-    saveLocalDraftFallback(cleanData, clientId, status, resultRecord?.id);
+    saveLocalDraftFallback(cleanData, clientId, status, resultRecord?.id || generatedId);
 
-    const insertedId = resultRecord?.id || 'resp-' + Date.now();
+    const insertedId = resultRecord?.id || generatedId;
 
     // Crear notificación para el admin
     try {
       const adminNotif: AppNotification = {
-        id: 'notif-quest-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+        id: generateUUID(),
         title: status === 'nuevo' ? '¡Nuevo Cuestionario Enviado!' : '¡Cuestionario Guardado / Actualizado!',
         message: `El cliente "${clientName}" (${company}) ha ${status === 'nuevo' ? 'enviado para revisión' : 'guardado'} su cuestionario con información actualizada.`,
         created_at: new Date().toISOString(),
@@ -628,7 +638,7 @@ export async function saveResponseToSupabase(
     return { success: true, result: resultRecord };
   } catch (err: any) {
     console.error('Excepción Supabase al guardar cuestionario:', err);
-    saveLocalDraftFallback(data, clientId, status);
+    saveLocalDraftFallback(data, clientId, status, generatedId);
     return { success: true, isLocalFallback: true, error: err.message };
   }
 }
@@ -636,22 +646,23 @@ export async function saveResponseToSupabase(
 function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, status?: string, recordId?: string) {
   try {
     const localResponses = getLocalResponsesFallback();
+    const cleanEmail = data.contactEmail?.trim().toLowerCase() || '';
 
     if (status === 'borrador') {
       const existingDraftIndex = localResponses.findIndex(
         (r) =>
           r.status === 'borrador' &&
           ((clientId && r.client_id === clientId) ||
-            (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase()))
+            (cleanEmail && r.contact_email?.toLowerCase() === cleanEmail))
       );
 
       const draftRecord: QuestionnaireResponseRecord = {
-        id: existingDraftIndex >= 0 ? localResponses[existingDraftIndex].id : (recordId || 'resp-' + Date.now()),
+        id: existingDraftIndex >= 0 ? localResponses[existingDraftIndex].id : (recordId || generateUUID()),
         created_at: new Date().toISOString(),
         client_id: clientId,
         company_name: data.companyName || 'Empresa Sin Nombre',
         client_name: data.clientName || 'Cliente No Especificado',
-        contact_email: data.contactEmail || '',
+        contact_email: cleanEmail,
         contact_phone: data.contactPhone || '',
         data: data,
         status: 'borrador',
@@ -668,12 +679,12 @@ function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, stat
 
     // Para envíos de cuestionarios ('nuevo' u otros estados): agregar como un nuevo registro en el historial
     const newRecord: QuestionnaireResponseRecord = {
-      id: recordId || 'resp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+      id: recordId || generateUUID(),
       created_at: new Date().toISOString(),
       client_id: clientId,
       company_name: data.companyName || 'Empresa Sin Nombre',
       client_name: data.clientName || 'Cliente No Especificado',
-      contact_email: data.contactEmail || '',
+      contact_email: cleanEmail,
       contact_phone: data.contactPhone || '',
       data: data,
       status: (status || 'nuevo') as QuestionnaireResponseRecord['status'],
@@ -684,12 +695,35 @@ function saveLocalDraftFallback(data: QuestionnaireData, clientId?: string, stat
       (r) =>
         !(r.status === 'borrador' &&
           ((clientId && r.client_id === clientId) ||
-            (data.contactEmail && r.contact_email?.toLowerCase() === data.contactEmail.toLowerCase())))
+            (cleanEmail && r.contact_email?.toLowerCase() === cleanEmail)))
     );
 
     saveLocalResponses([newRecord, ...filtered]);
   } catch (e) {
     console.error('Error saving local fallback draft:', e);
+  }
+}
+
+// Helper para sincronizar respuestas locales no presentes en Supabase
+async function syncUnsyncedToSupabase(unsyncedList: QuestionnaireResponseRecord[]) {
+  for (const item of unsyncedList) {
+    try {
+      const uuid = item.id.includes('-') && item.id.length >= 32 ? item.id : generateUUID();
+      await supabase.from('questionnaire_responses').insert([
+        {
+          id: uuid,
+          company_name: item.company_name,
+          client_name: item.client_name,
+          contact_email: item.contact_email,
+          contact_phone: item.contact_phone,
+          data: item.data,
+          status: item.status || 'nuevo',
+          created_at: item.created_at || new Date().toISOString(),
+        },
+      ]);
+    } catch (e) {
+      console.warn('Advertencia en sincronización de respuesta local a Supabase:', e);
+    }
   }
 }
 
@@ -710,15 +744,21 @@ export async function fetchResponsesFromSupabase(): Promise<QuestionnaireRespons
 
     // Combinar respuestas de Supabase con respuestas locales que no estén sincronizadas aún
     const supabaseIds = new Set(data.map((r: any) => String(r.id)));
-    const supabaseEmails = new Set(data.map((r: any) => r.contact_email?.toLowerCase()).filter(Boolean));
 
-    const unsyncedLocal = localData.filter(
-      (l) => !supabaseIds.has(String(l.id)) && (!l.contact_email || !supabaseEmails.has(l.contact_email.toLowerCase()))
-    );
+    // Filtramos ÚNICAMENTE por ID para no descartar envíos nuevos del mismo correo
+    const unsyncedLocal = localData.filter((l) => !supabaseIds.has(String(l.id)));
 
     const merged = [...data, ...unsyncedLocal] as QuestionnaireResponseRecord[];
+    merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
     // Sincronizar en localStorage para redundancia
     saveLocalResponses(merged);
+
+    // Si hay respuestas locales no guardadas en Supabase, intentamos subirlas
+    if (unsyncedLocal.length > 0) {
+      syncUnsyncedToSupabase(unsyncedLocal);
+    }
+
     return merged;
   } catch (err) {
     console.warn('Excepción obteniendo respuestas de Supabase:', err);

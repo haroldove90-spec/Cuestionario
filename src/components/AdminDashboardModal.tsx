@@ -73,7 +73,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onLogout,
   onSuccessToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<'responses' | 'clients' | 'metrics' | 'notifications'>('clients');
+  const [activeTab, setActiveTab] = useState<'responses' | 'clients' | 'metrics' | 'notifications'>('responses');
   const [responses, setResponses] = useState<QuestionnaireResponseRecord[]>([]);
   const [clients, setClients] = useState<ClientUser[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -301,6 +301,25 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setNotifications(updated);
     saveLocalNotifications(updated);
     await markNotificationReadInSupabase(id);
+  };
+
+  const handleNotificationClick = async (notif: AppNotification) => {
+    if (!notif.read) {
+      await handleMarkNotifRead(notif.id);
+    }
+    if (notif.response_id) {
+      const found = responses.find((r) => String(r.id) === String(notif.response_id));
+      if (found) {
+        setSelectedRecord(found);
+        setEditingNotes(found.notes || '');
+        setEditCompany(found.company_name || '');
+        setEditClientName(found.client_name || '');
+        setEditEmail(found.contact_email || '');
+        setEditPhone(found.contact_phone || '');
+        setEditDailySteps(found.data?.section3?.dailyProcessSteps || '');
+      }
+      setActiveTab('responses');
+    }
   };
 
   const handleMarkAllNotifsRead = () => {
@@ -921,10 +940,11 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                   notifications.map((notif) => (
                     <div
                       key={notif.id}
-                      className={`p-4 rounded-xl border transition-all flex items-start gap-3 ${
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`p-4 rounded-xl border transition-all flex items-start gap-3 cursor-pointer hover:border-blue-300 ${
                         notif.read
-                          ? 'bg-white border-slate-200 text-slate-600'
-                          : 'bg-blue-50/80 border-blue-200 text-blue-950 font-medium shadow-2xs'
+                          ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          : 'bg-blue-50/80 border-blue-200 text-blue-950 font-medium shadow-2xs hover:bg-blue-100/80'
                       }`}
                     >
                       <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${notif.read ? 'bg-slate-100 text-slate-400' : 'bg-blue-600 text-white'}`}>
