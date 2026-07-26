@@ -36,7 +36,7 @@ export const SupabaseSqlModal: React.FC<SupabaseSqlModalProps> = ({
     setIsSending(true);
     setSubmitResult(null);
 
-    const res = await saveResponseToSupabase(data);
+    const res = await saveResponseToSupabase(data, undefined, 'nuevo');
     setIsSending(false);
 
     if (res.success) {

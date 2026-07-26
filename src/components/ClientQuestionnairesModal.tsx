@@ -27,14 +27,18 @@ export const ClientQuestionnairesModal: React.FC<ClientQuestionnairesModalProps>
   useEffect(() => {
     if (isOpen && currentClient) {
       loadQuestionnaires();
+      const interval = setInterval(() => {
+        loadQuestionnaires(true);
+      }, 5000);
+      return () => clearInterval(interval);
     }
   }, [isOpen, currentClient]);
 
-  const loadQuestionnaires = async () => {
-    setIsLoading(true);
+  const loadQuestionnaires = async (isBackground = false) => {
+    if (!isBackground) setIsLoading(true);
     const data = await fetchClientQuestionnairesFromSupabase(currentClient.id, currentClient.email);
     setQuestionnaires(data);
-    setIsLoading(false);
+    if (!isBackground) setIsLoading(false);
   };
 
   if (!isOpen) return null;

@@ -526,15 +526,57 @@ export async function saveResponseToSupabase(
 
     // Si no es un borrador que se actualizó, es un nuevo envío oficial ('nuevo') o un nuevo registro
     if (!resultRecord) {
-      const generatedId = 'resp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
       const newCreatedAt = new Date().toISOString();
+
+      // Intento 1: Inserción limpia dejando que Supabase autogenere el ID según la definición de su tabla (UUID o TEXT)
+      const payload1: any = {
+        company_name: company,
+        client_name: clientName,
+        contact_email: cleanEmail,
+        contact_phone: phone,
+        data: cleanData,
+        status: status,
+        created_at: newCreatedAt,
+      };
+      if (clientId) {
+        payload1.client_id = clientId;
+      }
 
       const { data: insertRes, error: insertErr } = await supabase
         .from('questionnaire_responses')
-        .insert([
-          {
+        .insert([payload1])
+        .select();
+
+      if (!insertErr && insertRes && insertRes.length > 0) {
+        resultRecord = insertRes[0];
+      } else if (insertErr) {
+        console.warn('Intento 1 de inserción en Supabase falló:', insertErr.message);
+
+        // Intento 2: Si falló por client_id o id de tipo estricto, reintentar omitiendo client_id
+        const payload2: any = {
+          company_name: company,
+          client_name: clientName,
+          contact_email: cleanEmail,
+          contact_phone: phone,
+          data: cleanData,
+          status: status,
+          created_at: newCreatedAt,
+        };
+
+        const { data: retryRes2, error: retryErr2 } = await supabase
+          .from('questionnaire_responses')
+          .insert([payload2])
+          .select();
+
+        if (!retryErr2 && retryRes2 && retryRes2.length > 0) {
+          resultRecord = retryRes2[0];
+        } else {
+          console.warn('Intento 2 de inserción también falló:', retryErr2?.message);
+
+          // Intento 3: Reintentar pasando ID explicito por si la tabla no tiene valor por defecto
+          const generatedId = 'resp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+          const payload3: any = {
             id: generatedId,
-            client_id: clientId || null,
             company_name: company,
             client_name: clientName,
             contact_email: cleanEmail,
@@ -542,45 +584,21 @@ export async function saveResponseToSupabase(
             data: cleanData,
             status: status,
             created_at: newCreatedAt,
-          },
-        ])
-        .select();
+          };
 
-      if (insertErr) {
-        console.warn('Error al insertar cuestionario en Supabase:', insertErr.message);
-
-        // Si falló por tipo de client_id (UUID vs TEXT), reintentar con client_id nulo
-        if (insertErr.message.includes('uuid') || insertErr.message.includes('syntax')) {
-          const { data: retryRes, error: retryErr } = await supabase
+          const { data: retryRes3, error: retryErr3 } = await supabase
             .from('questionnaire_responses')
-            .insert([
-              {
-                id: generatedId,
-                client_id: null,
-                company_name: company,
-                client_name: clientName,
-                contact_email: cleanEmail,
-                contact_phone: phone,
-                data: cleanData,
-                status: status,
-                created_at: newCreatedAt,
-              },
-            ])
+            .insert([payload3])
             .select();
 
-          if (!retryErr && retryRes && retryRes.length > 0) {
-            resultRecord = retryRes[0];
+          if (!retryErr3 && retryRes3 && retryRes3.length > 0) {
+            resultRecord = retryRes3[0];
           } else {
-            console.warn('Reintento de inserción también falló:', retryErr?.message);
+            console.error('Todos los intentos de inserción en Supabase fallaron:', retryErr3?.message || retryErr2?.message || insertErr.message);
             saveLocalDraftFallback(cleanData, clientId, status, generatedId);
-            return { success: true, isLocalFallback: true, error: retryErr?.message || insertErr.message };
+            return { success: true, isLocalFallback: true, error: retryErr3?.message || insertErr.message };
           }
-        } else {
-          saveLocalDraftFallback(cleanData, clientId, status, generatedId);
-          return { success: true, isLocalFallback: true, error: insertErr.message };
         }
-      } else {
-        resultRecord = insertRes ? insertRes[0] : null;
       }
     }
 

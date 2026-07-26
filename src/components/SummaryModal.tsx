@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Download, FileText, Building2, User, Phone, Mail, Database, Loader2, CheckCircle2, Paperclip, ExternalLink, Send } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { QuestionnaireData } from '../types';
 import { saveResponseToSupabase } from '../lib/supabase';
+import { exportElementToPdf } from '../lib/pdfExport';
 import { Logo } from './Logo';
 
 interface SummaryModalProps {
@@ -45,58 +44,24 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
   const handleDownloadPDF = async () => {
     setIsSyncing(true);
     setIsExporting(true);
-    await saveResponseToSupabase(data);
+    await saveResponseToSupabase(data, undefined, 'nuevo');
     setIsSyncing(false);
     setSynced(true);
 
-    const element = document.getElementById('printableSummary');
-    if (element) {
-      const cleanCompanyName = (data.companyName || 'Cliente').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `Cuestionario_${cleanCompanyName}.pdf`;
+    const cleanCompanyName = (data.companyName || 'Cliente').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `Cuestionario_${cleanCompanyName}.pdf`;
 
-      try {
-        const canvas = await html2canvas(element, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-        });
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4',
-        });
-
-        const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-        let heightLeft = pdfHeight;
-        let position = 0;
-        const pageHeight = pdf.internal.pageSize.getHeight();
-
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-
-        while (heightLeft > 0) {
-          position = heightLeft - pdfHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-          heightLeft -= pageHeight;
-        }
-
-        pdf.save(filename);
-        onToast('Documento PDF descargado.');
-      } catch (err) {
-        console.warn('Fallback al diálogo de impresión/guardado PDF del navegador:', err);
-        window.print();
-      }
-    } else {
-      window.print();
-    }
-    setIsExporting(false);
+    await exportElementToPdf({
+      elementId: 'printableSummary',
+      filename,
+      onFinish: () => {
+        setIsExporting(false);
+        onToast('¡Documento PDF exportado en tamaño completo A4!');
+      },
+      onError: () => {
+        setIsExporting(false);
+      },
+    });
   };
 
   const generateMarkdown = (): string => {

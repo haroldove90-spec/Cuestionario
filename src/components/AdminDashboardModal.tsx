@@ -54,6 +54,7 @@ import {
   createClientNotificationInSupabase,
   SUPABASE_SQL_SCRIPT,
 } from '../lib/supabase';
+import { exportElementToPdf } from '../lib/pdfExport';
 import { QuestionnaireResponseRecord, AppNotification, AdminUser, QuestionnaireData, ClientUser } from '../types';
 
 interface AdminDashboardModalProps {
@@ -98,6 +99,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   // SQL Script Modal State
   const [showSqlModal, setShowSqlModal] = useState<boolean>(false);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+
+  const handleExportPdfAdmin = async () => {
+    if (!selectedRecord) return;
+    setIsExportingPdf(true);
+    const cleanCompanyName = (selectedRecord.company_name || 'Cliente').replace(/[^a-zA-Z0-9_-]/g, '_');
+    await exportElementToPdf({
+      elementId: 'adminPrintableQuestionnaire',
+      filename: `Cuestionario_${cleanCompanyName}.pdf`,
+      onFinish: () => {
+        setIsExportingPdf(false);
+        onSuccessToast('¡Documento PDF exportado en tamaño completo A4!');
+      },
+      onError: () => {
+        setIsExportingPdf(false);
+      },
+    });
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -971,6 +990,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={handleExportPdfAdmin}
+                  disabled={isExportingPdf}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                  title="Descargar cuestionario completo en formato PDF A4"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{isExportingPdf ? 'Exportando PDF...' : 'Descargar PDF'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsEditingFields(!isEditingFields)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-300 bg-amber-950/80 hover:bg-amber-900 border border-amber-700/50 rounded-xl transition-colors cursor-pointer"
                 >
@@ -988,7 +1017,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             </div>
 
             {/* Drawer Content */}
-            <div className="p-6 overflow-y-auto space-y-6 text-slate-800 text-xs sm:text-sm">
+            <div id="adminPrintableQuestionnaire" className="p-6 overflow-y-auto space-y-6 text-slate-800 text-xs sm:text-sm">
               {/* Historial de Envíos de este Cliente */}
               {(() => {
                 const clientHistory = responses.filter(
