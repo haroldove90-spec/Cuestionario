@@ -2,8 +2,20 @@ import { createClient } from '@supabase/supabase-js';
 import { QuestionnaireData, QuestionnaireResponseRecord, AppNotification, ClientUser } from '../types';
 
 export const SUPABASE_PROJECT_ID = 'jetychvxbrgqlnxwrdew';
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || 'https://jetychvxbrgqlnxwrdew.supabase.co';
-export const SUPABASE_URL = rawUrl.trim().replace(/\/+$/, '');
+
+function getCleanSupabaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  let url = envUrl || `https://${SUPABASE_PROJECT_ID}.supabase.co`;
+  // Remover cualquier sufijo de endpoint como /rest/v1, /storage/v1, /auth/v1 o barras finales
+  url = url
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/storage\/v1\/?$/i, '')
+    .replace(/\/auth\/v1\/?$/i, '')
+    .replace(/\/+$/, '');
+  return url;
+}
+
+export const SUPABASE_URL = getCleanSupabaseUrl();
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpldHljaHZ4YnJncWxueHdyZGV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MTc4NTEsImV4cCI6MjEwMDM5Mzg1MX0.ssvY_V_KhGkXIQOdBS12_bTKeJf6uPXkXbTaECgjJ-Y';
 export const SUPABASE_ANON_KEY = rawKey.trim();
 
