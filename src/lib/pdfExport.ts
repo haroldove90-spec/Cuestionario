@@ -10,6 +10,44 @@ interface ExportPdfOptions {
 }
 
 /**
+ * Convierte cualquier color CSS no soportado (como oklch, oklab, color-mix) a formato HEX o RGBA
+ * utilizando un contexto 2D de canvas temporal de forma ultra rápida.
+ */
+function convertCssColorToHexOrRgb(colorStr: string): string {
+  if (!colorStr) return colorStr;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#000000';
+      ctx.fillStyle = colorStr;
+      const result = ctx.fillStyle;
+      if (result && !result.includes('oklch') && !result.includes('oklab')) {
+        return result;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return '#334155'; // Fallback Slate neutro
+}
+
+/**
+ * Reemplaza todas las funciones de color no soportadas por html2canvas (como oklch u oklab)
+ * dentro de un bloque de texto CSS o atributo style.
+ */
+function replaceUnsupportedColors(str: string): string {
+  if (!str) return str;
+  if (!str.includes('oklch') && !str.includes('oklab') && !str.includes('color-mix')) return str;
+
+  return str.replace(/(oklch|oklab|color-mix|light-dark)\([^)]+\)/gi, (match) => {
+    return convertCssColorToHexOrRgb(match);
+  });
+}
+
+/**
  * Convierte una URL de imagen a un DataURL en base64 usando canvas o fetch
  * para evitar problemas de CORS y 'tainted canvas' en html2canvas.
  */
@@ -167,7 +205,48 @@ export async function exportElementToPdf({
       }
     });
 
-    // 7. Ajustar y fijar colores de SVGs (Lucide icons) para que html2canvas los dibuje sin fallar
+    // 7. SANITIZAR Y REEMPLAZAR COLORES OKLCH/OKLAB EN TODO EL ÁRBOL CLONADO
+    const colorPropsToSanitize = [
+      'color',
+      'backgroundColor',
+      'borderColor',
+      'borderTopColor',
+      'borderBottomColor',
+      'borderLeftColor',
+      'borderRightColor',
+      'outlineColor',
+      'fill',
+      'stroke',
+    ];
+
+    const allClonedNodes = Array.from(clonedContent.querySelectorAll('*'));
+    allClonedNodes.push(clonedContent);
+
+    allClonedNodes.forEach((node) => {
+      const el = node as HTMLElement;
+
+      // Limpiar inline style attribute si contiene oklch
+      const styleAttr = el.getAttribute('style');
+      if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab') || styleAttr.includes('color-mix'))) {
+        el.setAttribute('style', replaceUnsupportedColors(styleAttr));
+      }
+
+      // Evaluar computed styles y fijarlos inline
+      try {
+        const computed = window.getComputedStyle(el);
+        colorPropsToSanitize.forEach((prop) => {
+          const val = computed.getPropertyValue(prop);
+          if (val && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
+            const cleanVal = convertCssColorToHexOrRgb(val);
+            el.style.setProperty(prop, cleanVal, 'important');
+          }
+        });
+      } catch {
+        // ignore
+      }
+    });
+
+    // 8. Ajustar y fijar colores de SVGs (Lucide icons) para que html2canvas los dibuje sin fallar
     const svgs = Array.from(clonedContent.querySelectorAll('svg'));
     svgs.forEach((svg) => {
       try {
@@ -175,10 +254,10 @@ export async function exportElementToPdf({
         const stroke = computedStyle.stroke;
         const fill = computedStyle.fill;
         if (stroke && stroke !== 'none' && stroke !== 'rgba(0, 0, 0, 0)') {
-          svg.setAttribute('stroke', stroke);
+          svg.setAttribute('stroke', convertCssColorToHexOrRgb(stroke));
         }
         if (fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)') {
-          svg.setAttribute('fill', fill);
+          svg.setAttribute('fill', convertCssColorToHexOrRgb(fill));
         }
         if (!svg.getAttribute('width')) {
           const w = parseFloat(computedStyle.width) || 18;
@@ -193,7 +272,7 @@ export async function exportElementToPdf({
       }
     });
 
-    // 8. Convertir todas las imágenes a Data URLs (base64)
+    // 9. Convertir todas las imágenes a Data URLs (base64)
     const imgs = Array.from(clonedContent.querySelectorAll('img'));
     await Promise.all(
       imgs.map(async (img) => {
@@ -227,18 +306,47 @@ export async function exportElementToPdf({
     // Pequeño delay de reflow
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // 9. Renderizar canvas con timeout de seguridad y useCORS: false
+    // 10. Renderizar canvas con html2canvas y sanitización en onclone
     const canvas = await Promise.race([
       html2canvas(cloneContainer, {
         scale: 2,
-        useCORS: false, // Las imágenes ya son base64, desactiva la creación de iframes CORS que se cuelgan
+        useCORS: false, // Las imágenes ya son base64
         allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
         windowWidth: 800,
+        onclone: (clonedDoc) => {
+          // A. Reemplazar oklch/oklab en todas las etiquetas <style> del documento clonado
+          const styleElements = Array.from(clonedDoc.querySelectorAll('style'));
+          styleElements.forEach((styleTag) => {
+            if (
+              styleTag.textContent &&
+              (styleTag.textContent.includes('oklch') ||
+                styleTag.textContent.includes('oklab') ||
+                styleTag.textContent.includes('color-mix'))
+            ) {
+              styleTag.textContent = replaceUnsupportedColors(styleTag.textContent);
+            }
+          });
+
+          // B. Reemplazar oklch/oklab en atributos style de todos los elementos clonados
+          const allElements = Array.from(clonedDoc.querySelectorAll('*'));
+          allElements.forEach((node) => {
+            const el = node as HTMLElement;
+            const styleAttr = el.getAttribute('style');
+            if (
+              styleAttr &&
+              (styleAttr.includes('oklch') ||
+                styleAttr.includes('oklab') ||
+                styleAttr.includes('color-mix'))
+            ) {
+              el.setAttribute('style', replaceUnsupportedColors(styleAttr));
+            }
+          });
+        },
       }),
       new Promise<HTMLCanvasElement>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout al procesar el lienzo del documento PDF')), 10000)
+        setTimeout(() => reject(new Error('Timeout al procesar el lienzo del documento PDF')), 12000)
       ),
     ]);
 
@@ -252,7 +360,7 @@ export async function exportElementToPdf({
       throw new Error('No se pudo generar la imagen del documento.');
     }
 
-    // 10. Construir el documento A4
+    // 11. Construir el documento A4
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -323,7 +431,7 @@ export async function exportElementToPdf({
       pageIndex++;
     }
 
-    // 11. DISPARAR DESCARGA CON MÚLTIPLES MÉTODOS DE FALLBACK
+    // 12. DISPARAR DESCARGA CON MÚLTIPLES MÉTODOS DE FALLBACK
     let downloaded = false;
 
     // Método A: pdf.save de jsPDF
