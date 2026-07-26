@@ -16,7 +16,7 @@
     padding: 0 !important;
   }
 
-  /* Ocultar botones e interfaz interactiva de la aplicación */
+  /* Ocultar la UI interactiva que no debe salir en la impresión */
   .no-print,
   button,
   header,
@@ -26,7 +26,7 @@
     display: none !important;
   }
 
-  /* Hacer visible la jerarquía de los elementos imprimibles */
+  /* Ocultar todo lo que no sean los contenedores principales de cuestionario */
   body * {
     visibility: hidden;
   }
@@ -38,10 +38,10 @@
     visibility: visible !important;
   }
 
-  /* Posicionar el contenedor activo en la parte superior de la página de impresión */
+  /* Posicionar el contenedor activo en la parte superior para flujo multi-página A4 */
   #printableSummary,
   #adminPrintableQuestionnaire {
-    position: fixed !important;
+    position: absolute !important;
     top: 0 !important;
     left: 0 !important;
     width: 100% !important;
@@ -54,6 +54,15 @@
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
-    z-index: 999999 !important;
+    display: block !important;
+    page-break-inside: auto;
+  }
+
+  /* Eliminar scrollbars y alturas máximas en todos los hijos impresos */
+  #printableSummary *,
+  #adminPrintableQuestionnaire * {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 }

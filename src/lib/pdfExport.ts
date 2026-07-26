@@ -26,10 +26,10 @@ export async function exportElementToPdf({
 
     // Crear un contenedor clonado para renderizar sin restricciones de overflow, scroll o modales
     const cloneContainer = document.createElement('div');
-    cloneContainer.style.position = 'fixed';
+    cloneContainer.style.position = 'absolute';
     cloneContainer.style.top = '0';
-    cloneContainer.style.left = '0';
-    cloneContainer.style.width = '800px'; // Ancho estándar de lectura A4 en px (~794px)
+    cloneContainer.style.left = '-9999px';
+    cloneContainer.style.width = '800px'; // Ancho estándar A4 en px
     cloneContainer.style.backgroundColor = '#ffffff';
     cloneContainer.style.color = '#0f172a';
     cloneContainer.style.padding = '32px';
@@ -43,6 +43,16 @@ export async function exportElementToPdf({
     clonedContent.style.height = 'auto';
     clonedContent.style.overflow = 'visible';
     clonedContent.style.width = '100%';
+
+    // Desconectar restricciones de scroll y altura en TODOS los elementos hijos del clon
+    clonedContent.querySelectorAll('*').forEach((node) => {
+      const el = node as HTMLElement;
+      el.style.maxHeight = 'none';
+      if (el.style.overflow || el.style.overflowY || el.style.overflowX) {
+        el.style.overflow = 'visible';
+        el.style.height = 'auto';
+      }
+    });
 
     // Remover botones o elementos con la clase no-print si los hay
     clonedContent.querySelectorAll('.no-print, button, select').forEach((btn) => {
