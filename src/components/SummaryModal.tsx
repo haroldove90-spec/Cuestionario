@@ -56,7 +56,7 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
       filename,
       onFinish: () => {
         setIsExporting(false);
-        onToast('¡Documento PDF exportado en tamaño completo A4!');
+        onToast('¡Documento PDF descargado exitosamente en su dispositivo!');
       },
       onError: () => {
         setIsExporting(false);

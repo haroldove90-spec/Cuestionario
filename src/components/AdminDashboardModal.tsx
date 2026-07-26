@@ -110,7 +110,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       filename: `Cuestionario_${cleanCompanyName}.pdf`,
       onFinish: () => {
         setIsExportingPdf(false);
-        onSuccessToast('¡Documento PDF exportado en tamaño completo A4!');
+        onSuccessToast('¡Documento PDF descargado exitosamente en su dispositivo!');
       },
       onError: () => {
         setIsExportingPdf(false);
