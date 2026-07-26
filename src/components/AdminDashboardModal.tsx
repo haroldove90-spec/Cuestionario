@@ -1038,6 +1038,24 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
             {/* Drawer Content */}
             <div id="adminPrintableQuestionnaire" className="p-6 overflow-y-auto space-y-6 text-slate-800 text-xs sm:text-sm">
+              {/* Encabezado Oficial con Logo para Exportación PDF */}
+              <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+                <div className="flex items-center gap-3">
+                  <Logo className="h-10 sm:h-12 w-auto" variant="light" />
+                  <div>
+                    <p className="text-xs sm:text-sm text-slate-700 font-extrabold uppercase tracking-wider">Cuestionario de Requerimientos de Software</p>
+                  </div>
+                </div>
+                <div className="text-right text-xs text-slate-600">
+                  <span className="inline-block px-2.5 py-1 bg-slate-100 text-slate-800 rounded-md font-bold uppercase text-[10px] mb-1">
+                    Documento de Inspección Admin
+                  </span>
+                  <p className="font-medium">
+                    Fecha: {new Date(selectedRecord.created_at).toLocaleDateString('es-MX')}
+                  </p>
+                </div>
+              </div>
+
               {/* Historial de Envíos de este Cliente */}
               {(() => {
                 const clientHistory = responses.filter(

@@ -26,15 +26,16 @@ export async function exportElementToPdf({
 
     // Crear un contenedor clonado para renderizar sin restricciones de overflow, scroll o modales
     const cloneContainer = document.createElement('div');
-    cloneContainer.style.position = 'absolute';
-    cloneContainer.style.top = '-99999px';
-    cloneContainer.style.left = '-99999px';
+    cloneContainer.style.position = 'fixed';
+    cloneContainer.style.top = '0';
+    cloneContainer.style.left = '0';
     cloneContainer.style.width = '800px'; // Ancho estándar de lectura A4 en px (~794px)
     cloneContainer.style.backgroundColor = '#ffffff';
     cloneContainer.style.color = '#0f172a';
     cloneContainer.style.padding = '32px';
     cloneContainer.style.boxSizing = 'border-box';
-    cloneContainer.style.zIndex = '-9999';
+    cloneContainer.style.zIndex = '-99999';
+    cloneContainer.style.pointerEvents = 'none';
 
     // Clonar el contenido e insertarlo
     const clonedContent = originalElement.cloneNode(true) as HTMLElement;
@@ -44,29 +45,46 @@ export async function exportElementToPdf({
     clonedContent.style.width = '100%';
 
     // Remover botones o elementos con la clase no-print si los hay
-    clonedContent.querySelectorAll('.no-print, button').forEach((btn) => {
-      // Dejar solo botones informativos no interactivos si es necesario, o esconder botones de acción
+    clonedContent.querySelectorAll('.no-print, button, select').forEach((btn) => {
       if (!btn.classList.contains('keep-print')) {
         (btn as HTMLElement).style.display = 'none';
       }
     });
 
+    // Asegurar atributo crossOrigin en las imágenes para evitar taintear el canvas
+    const imgs = Array.from(clonedContent.querySelectorAll('img'));
+    imgs.forEach((img) => {
+      img.crossOrigin = 'anonymous';
+    });
+
     cloneContainer.appendChild(clonedContent);
     document.body.appendChild(cloneContainer);
 
-    // Esperar a que las imágenes o recursos se estabilicen
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Esperar a que las imágenes se hayan cargado por completo
+    await Promise.all(
+      imgs.map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) resolve(null);
+            else {
+              img.onload = () => resolve(null);
+              img.onerror = () => resolve(null);
+            }
+          })
+      )
+    );
 
-    // Capturar con html2canvas
+    // Tiempo de estabilización adicional de renderizado
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Capturar con html2canvas (allowTaint: false para permitir canvas.toDataURL)
     const canvas = await html2canvas(cloneContainer, {
       scale: 2, // Calidad retina/HD (300 DPI aprox)
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false,
       logging: false,
       backgroundColor: '#ffffff',
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 1200,
+      windowWidth: 800,
     });
 
     // Remover clon del DOM inmediatamente
