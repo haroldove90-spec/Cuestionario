@@ -533,9 +533,10 @@ export async function exportElementToPdf({
       pageIndex++;
     }
 
-    // 11. DISPARAR DESCARGA CON FALLBACKS DE SEGURIDAD
+    // 11. DISPARAR DESCARGA (ÚNICA DESCARGA CON FALLBACKS DE SEGURIDAD)
     let downloaded = false;
 
+    // Método A: pdf.save de jsPDF (método principal)
     try {
       pdf.save(filename);
       downloaded = true;
@@ -543,28 +544,32 @@ export async function exportElementToPdf({
       console.warn('Fallback: pdf.save falló:', e);
     }
 
-    try {
-      const pdfBlob = pdf.output('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.href = blobUrl;
-      downloadAnchor.download = filename;
-      downloadAnchor.setAttribute('download', filename);
-      downloadAnchor.style.display = 'none';
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloaded = true;
+    // Método B: Enlace Blob si pdf.save no funcionó
+    if (!downloaded) {
+      try {
+        const pdfBlob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.href = blobUrl;
+        downloadAnchor.download = filename;
+        downloadAnchor.setAttribute('download', filename);
+        downloadAnchor.style.display = 'none';
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloaded = true;
 
-      setTimeout(() => {
-        if (downloadAnchor.parentNode) {
-          downloadAnchor.parentNode.removeChild(downloadAnchor);
-        }
-        URL.revokeObjectURL(blobUrl);
-      }, 12000);
-    } catch (e) {
-      console.warn('Fallback: Enlace Blob falló:', e);
+        setTimeout(() => {
+          if (downloadAnchor.parentNode) {
+            downloadAnchor.parentNode.removeChild(downloadAnchor);
+          }
+          URL.revokeObjectURL(blobUrl);
+        }, 12000);
+      } catch (e) {
+        console.warn('Fallback: Enlace Blob falló:', e);
+      }
     }
 
+    // Método C: DataURI si los anteriores no funcionaron
     if (!downloaded) {
       try {
         const dataUri = pdf.output('datauristring');
