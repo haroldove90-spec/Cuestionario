@@ -578,9 +578,9 @@ export async function saveResponseToSupabase(
       if (!insertErr && insertRes && insertRes.length > 0) {
         resultRecord = insertRes[0];
       } else if (insertErr) {
-        console.warn('Intento 1 de inserción en Supabase falló:', insertErr.message);
+        console.debug('Info: Reintentando inserción en Supabase sin columna opcional client_id...');
 
-        // Intento 2: Si falló por client_id (ej. tipo de columna UUID vs TEXT), reintentar omitiendo client_id
+        // Intento 2: Si falló por client_id (ej. tipo de columna UUID vs TEXT o schema cache), reintentar omitiendo client_id
         const payload2: any = {
           id: generatedId,
           company_name: company,

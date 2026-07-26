@@ -246,26 +246,26 @@ export async function exportElementToPdf({
       throw new Error(`No se encontró el elemento a exportar con ID #${elementId}`);
     }
 
-    // SANITIZAR EL DOCUMENTO PRINCIPAL ANTES DE CLONAR (Elimina oklch de Tailwind v4)
+    // SANITIZAR EL DOCUMENTO PRINCIPAL ANTES DE CLONAR
     sanitizeDocumentStyles(document);
 
-    // 1. Crear un contenedor outer clipped invisible para no parpadear en la pantalla
+    // 1. Contenedor fuera de pantalla con ancho completo y altura automática sin recortes
     outerWrapper = document.createElement('div');
-    outerWrapper.style.position = 'fixed';
+    outerWrapper.style.position = 'absolute';
     outerWrapper.style.top = '0';
-    outerWrapper.style.left = '0';
-    outerWrapper.style.width = '0';
-    outerWrapper.style.height = '0';
-    outerWrapper.style.overflow = 'hidden';
+    outerWrapper.style.left = '-9999px';
+    outerWrapper.style.width = '800px';
+    outerWrapper.style.height = 'auto';
+    outerWrapper.style.overflow = 'visible';
     outerWrapper.style.zIndex = '-999999';
     outerWrapper.style.pointerEvents = 'none';
 
     // 2. Contenedor interno clonado a ancho A4 estándar (800px ~ 190mm a 96dpi)
     const cloneContainer = document.createElement('div');
-    cloneContainer.style.position = 'absolute';
-    cloneContainer.style.top = '0';
-    cloneContainer.style.left = '0';
+    cloneContainer.style.position = 'relative';
     cloneContainer.style.width = '800px';
+    cloneContainer.style.height = 'auto';
+    cloneContainer.style.overflow = 'visible';
     cloneContainer.style.backgroundColor = '#ffffff';
     cloneContainer.style.color = '#0f172a';
     cloneContainer.style.padding = '24px';
@@ -305,17 +305,7 @@ export async function exportElementToPdf({
       }
     });
 
-    // 6. Remover scroll / overflow en todo el árbol de hijos
-    clonedContent.querySelectorAll('*').forEach((node) => {
-      const el = node as HTMLElement;
-      el.style.maxHeight = 'none';
-      if (el.style.overflow || el.style.overflowY || el.style.overflowX) {
-        el.style.overflow = 'visible';
-        el.style.height = 'auto';
-      }
-    });
-
-    // 7. SANITIZAR EL ÁRBOL CLONADO
+    // 6. Remover max-height y overflow en TODO el árbol para evitar que se corte el contenido
     const colorPropsToSanitize = [
       'color',
       'backgroundColor',
@@ -334,6 +324,14 @@ export async function exportElementToPdf({
 
     allClonedNodes.forEach((node) => {
       const el = node as HTMLElement;
+      const tagName = el.tagName.toLowerCase();
+
+      if (tagName !== 'img' && tagName !== 'svg' && tagName !== 'path') {
+        el.style.setProperty('max-height', 'none', 'important');
+        el.style.setProperty('overflow', 'visible', 'important');
+        el.style.setProperty('overflow-y', 'visible', 'important');
+        el.style.setProperty('overflow-x', 'visible', 'important');
+      }
 
       const styleAttr = el.getAttribute('style');
       if (
@@ -362,7 +360,7 @@ export async function exportElementToPdf({
       }
     });
 
-    // 8. Ajustar y fijar colores de SVGs (Lucide icons)
+    // 7. Ajustar y fijar colores de SVGs (Lucide icons)
     const svgs = Array.from(clonedContent.querySelectorAll('svg'));
     svgs.forEach((svg) => {
       try {
@@ -388,7 +386,7 @@ export async function exportElementToPdf({
       }
     });
 
-    // 9. Convertir todas las imágenes a Data URLs (base64)
+    // 8. Convertir todas las imágenes a Data URLs (base64)
     const imgs = Array.from(clonedContent.querySelectorAll('img'));
     await Promise.all(
       imgs.map(async (img) => {
@@ -419,9 +417,20 @@ export async function exportElementToPdf({
     outerWrapper.appendChild(cloneContainer);
     document.body.appendChild(outerWrapper);
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Esperar reflujo para renderizado completo de fuentes e imágenes
+    await new Promise((resolve) => setTimeout(resolve, 350));
 
-    // 10. Renderizar canvas con html2canvas y sanitización en onclone
+    // Calcular la altura real completa del contenido desplegado
+    const targetWidth = 800;
+    const targetHeight = Math.max(
+      cloneContainer.scrollHeight,
+      cloneContainer.offsetHeight,
+      clonedContent.scrollHeight,
+      clonedContent.offsetHeight,
+      1200
+    );
+
+    // 9. Renderizar canvas completo con html2canvas especificando alto exacto
     const canvas = await Promise.race([
       html2canvas(cloneContainer, {
         scale: 2,
@@ -429,13 +438,18 @@ export async function exportElementToPdf({
         allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 800,
+        width: targetWidth,
+        height: targetHeight,
+        windowWidth: targetWidth,
+        windowHeight: targetHeight + 200,
+        scrollX: 0,
+        scrollY: 0,
         onclone: (clonedDoc) => {
           sanitizeDocumentStyles(clonedDoc);
         },
       }),
       new Promise<HTMLCanvasElement>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout al procesar el lienzo del documento PDF')), 12000)
+        setTimeout(() => reject(new Error('Timeout al procesar el lienzo del documento PDF')), 15000)
       ),
     ]);
 
@@ -448,7 +462,7 @@ export async function exportElementToPdf({
       throw new Error('No se pudo generar la imagen del documento.');
     }
 
-    // 11. Construir el documento A4
+    // 10. Construir el documento PDF A4 multi-página sin cortes
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -519,7 +533,7 @@ export async function exportElementToPdf({
       pageIndex++;
     }
 
-    // 12. DISPARAR DESCARGA CON MÚLTIPLES MÉTODOS DE FALLBACK
+    // 11. DISPARAR DESCARGA CON FALLBACKS DE SEGURIDAD
     let downloaded = false;
 
     try {
