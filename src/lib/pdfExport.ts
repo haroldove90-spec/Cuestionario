@@ -10,40 +10,147 @@ interface ExportPdfOptions {
 }
 
 /**
- * Convierte cualquier color CSS no soportado (como oklch, oklab, color-mix) a formato HEX o RGBA
- * utilizando un contexto 2D de canvas temporal de forma ultra rápida.
+ * Convierte una cadena OKLCH a RGB/RGBA sRGB exacto.
+ * Evita que html2canvas falle con "Attempting to parse an unsupported color function oklch".
  */
-function convertCssColorToHexOrRgb(colorStr: string): string {
-  if (!colorStr) return colorStr;
+function oklchToRgb(oklchStr: string): string {
   try {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#000000';
-      ctx.fillStyle = colorStr;
-      const result = ctx.fillStyle;
-      if (result && !result.includes('oklch') && !result.includes('oklab')) {
-        return result;
-      }
+    const clean = oklchStr.replace(/oklch\(/i, '').replace(/\)/, '').trim();
+    let alpha = 1;
+    let partsStr = clean;
+
+    if (clean.includes('/')) {
+      const splitSlash = clean.split('/');
+      partsStr = splitSlash[0];
+      const alphaStr = splitSlash[1].trim();
+      alpha = alphaStr.endsWith('%') ? parseFloat(alphaStr) / 100 : parseFloat(alphaStr);
     }
+
+    const parts = partsStr.split(/[\s,]+/).filter(Boolean);
+    if (parts.length < 3) return '#334155';
+
+    let l = parseFloat(parts[0]);
+    if (parts[0].endsWith('%')) l /= 100;
+
+    let c = parseFloat(parts[1]);
+    if (parts[1].endsWith('%')) c /= 100;
+
+    let h = parseFloat(parts[2]);
+
+    if (isNaN(l) || isNaN(c) || isNaN(h)) return '#334155';
+
+    // OKLCH -> OKLAB
+    const hRad = (h * Math.PI) / 180;
+    const aLab = c * Math.cos(hRad);
+    const bLab = c * Math.sin(hRad);
+
+    // OKLAB -> Linear LMS
+    const l_ = l + 0.3963377774 * aLab + 0.2158037573 * bLab;
+    const m_ = l - 0.1055613458 * aLab - 0.0638541728 * bLab;
+    const s_ = l - 0.0894841775 * aLab - 1.291485548 * bLab;
+
+    const l3 = l_ * l_ * l_;
+    const m3 = m_ * m_ * m_;
+    const s3 = s_ * s_ * s_;
+
+    // LMS -> Linear sRGB
+    const rLin = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+    const gLin = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+    const bLin = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+    const toSrgb = (x: number) => {
+      x = Math.max(0, Math.min(1, x));
+      return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+    };
+
+    const r = Math.round(toSrgb(rLin) * 255);
+    const g = Math.round(toSrgb(gLin) * 255);
+    const b = Math.round(toSrgb(bLin) * 255);
+
+    if (alpha < 1 && !isNaN(alpha)) {
+      return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`;
+    }
+    return `rgb(${r}, ${g}, ${b})`;
   } catch {
-    // ignore
+    return '#334155';
   }
-  return '#334155'; // Fallback Slate neutro
 }
 
 /**
- * Reemplaza todas las funciones de color no soportadas por html2canvas (como oklch u oklab)
- * dentro de un bloque de texto CSS o atributo style.
+ * Reemplaza de forma exhaustiva funciones de color no soportadas por html2canvas
  */
-function replaceUnsupportedColors(str: string): string {
-  if (!str) return str;
-  if (!str.includes('oklch') && !str.includes('oklab') && !str.includes('color-mix')) return str;
+function sanitizeAllCssColors(cssText: string): string {
+  if (!cssText) return cssText;
+  let result = cssText;
+  if (result.includes('oklch')) {
+    result = result.replace(/oklch\([^)]+\)/gi, (match) => oklchToRgb(match));
+  }
+  if (result.includes('oklab')) {
+    result = result.replace(/oklab\([^)]+\)/gi, () => '#475569');
+  }
+  if (result.includes('color-mix')) {
+    result = result.replace(/color-mix\([^)]+\)/gi, () => '#475569');
+  }
+  return result;
+}
 
-  return str.replace(/(oklch|oklab|color-mix|light-dark)\([^)]+\)/gi, (match) => {
-    return convertCssColorToHexOrRgb(match);
+/**
+ * Sanitiza todas las hojas de estilo y atributos de color en el documento para eliminar oklch/oklab
+ */
+function sanitizeDocumentStyles(doc: Document) {
+  // 1. Sanitizar todas las etiquetas <style>
+  const styleTags = Array.from(doc.querySelectorAll('style'));
+  styleTags.forEach((styleTag) => {
+    if (
+      styleTag.textContent &&
+      (styleTag.textContent.includes('oklch') ||
+        styleTag.textContent.includes('oklab') ||
+        styleTag.textContent.includes('color-mix'))
+    ) {
+      styleTag.textContent = sanitizeAllCssColors(styleTag.textContent);
+    }
+  });
+
+  // 2. Convertir etiquetas <link rel="stylesheet"> con oklch a <style> inline sanitizadas
+  const linkTags = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'));
+  linkTags.forEach((link) => {
+    try {
+      const sheet = (link as HTMLLinkElement).sheet;
+      if (sheet && sheet.cssRules) {
+        let cssText = '';
+        for (let i = 0; i < sheet.cssRules.length; i++) {
+          cssText += sheet.cssRules[i].cssText + '\n';
+        }
+        if (
+          cssText.includes('oklch') ||
+          cssText.includes('oklab') ||
+          cssText.includes('color-mix')
+        ) {
+          const sanitized = sanitizeAllCssColors(cssText);
+          const newStyle = doc.createElement('style');
+          newStyle.textContent = sanitized;
+          doc.head.appendChild(newStyle);
+          link.remove();
+        }
+      }
+    } catch {
+      // Ignorar restricciones CORS de stylesheet externas
+    }
+  });
+
+  // 3. Sanitizar atributos inline de estilo en todos los elementos
+  const allElements = Array.from(doc.querySelectorAll('*'));
+  allElements.forEach((node) => {
+    const el = node as HTMLElement;
+    const styleAttr = el.getAttribute('style');
+    if (
+      styleAttr &&
+      (styleAttr.includes('oklch') ||
+        styleAttr.includes('oklab') ||
+        styleAttr.includes('color-mix'))
+    ) {
+      el.setAttribute('style', sanitizeAllCssColors(styleAttr));
+    }
   });
 }
 
@@ -139,6 +246,9 @@ export async function exportElementToPdf({
       throw new Error(`No se encontró el elemento a exportar con ID #${elementId}`);
     }
 
+    // SANITIZAR EL DOCUMENTO PRINCIPAL ANTES DE CLONAR (Elimina oklch de Tailwind v4)
+    sanitizeDocumentStyles(document);
+
     // 1. Crear un contenedor outer clipped invisible para no parpadear en la pantalla
     outerWrapper = document.createElement('div');
     outerWrapper.style.position = 'fixed';
@@ -205,7 +315,7 @@ export async function exportElementToPdf({
       }
     });
 
-    // 7. SANITIZAR Y REEMPLAZAR COLORES OKLCH/OKLAB EN TODO EL ÁRBOL CLONADO
+    // 7. SANITIZAR EL ÁRBOL CLONADO
     const colorPropsToSanitize = [
       'color',
       'backgroundColor',
@@ -225,19 +335,25 @@ export async function exportElementToPdf({
     allClonedNodes.forEach((node) => {
       const el = node as HTMLElement;
 
-      // Limpiar inline style attribute si contiene oklch
       const styleAttr = el.getAttribute('style');
-      if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('oklab') || styleAttr.includes('color-mix'))) {
-        el.setAttribute('style', replaceUnsupportedColors(styleAttr));
+      if (
+        styleAttr &&
+        (styleAttr.includes('oklch') ||
+          styleAttr.includes('oklab') ||
+          styleAttr.includes('color-mix'))
+      ) {
+        el.setAttribute('style', sanitizeAllCssColors(styleAttr));
       }
 
-      // Evaluar computed styles y fijarlos inline
       try {
         const computed = window.getComputedStyle(el);
         colorPropsToSanitize.forEach((prop) => {
           const val = computed.getPropertyValue(prop);
-          if (val && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
-            const cleanVal = convertCssColorToHexOrRgb(val);
+          if (
+            val &&
+            (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))
+          ) {
+            const cleanVal = sanitizeAllCssColors(val);
             el.style.setProperty(prop, cleanVal, 'important');
           }
         });
@@ -246,7 +362,7 @@ export async function exportElementToPdf({
       }
     });
 
-    // 8. Ajustar y fijar colores de SVGs (Lucide icons) para que html2canvas los dibuje sin fallar
+    // 8. Ajustar y fijar colores de SVGs (Lucide icons)
     const svgs = Array.from(clonedContent.querySelectorAll('svg'));
     svgs.forEach((svg) => {
       try {
@@ -254,10 +370,10 @@ export async function exportElementToPdf({
         const stroke = computedStyle.stroke;
         const fill = computedStyle.fill;
         if (stroke && stroke !== 'none' && stroke !== 'rgba(0, 0, 0, 0)') {
-          svg.setAttribute('stroke', convertCssColorToHexOrRgb(stroke));
+          svg.setAttribute('stroke', sanitizeAllCssColors(stroke));
         }
         if (fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)') {
-          svg.setAttribute('fill', convertCssColorToHexOrRgb(fill));
+          svg.setAttribute('fill', sanitizeAllCssColors(fill));
         }
         if (!svg.getAttribute('width')) {
           const w = parseFloat(computedStyle.width) || 18;
@@ -268,7 +384,7 @@ export async function exportElementToPdf({
           svg.setAttribute('height', `${h}px`);
         }
       } catch {
-        // Ignorar errores de computación si el SVG es dinámico
+        // ignore
       }
     });
 
@@ -303,46 +419,19 @@ export async function exportElementToPdf({
     outerWrapper.appendChild(cloneContainer);
     document.body.appendChild(outerWrapper);
 
-    // Pequeño delay de reflow
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     // 10. Renderizar canvas con html2canvas y sanitización en onclone
     const canvas = await Promise.race([
       html2canvas(cloneContainer, {
         scale: 2,
-        useCORS: false, // Las imágenes ya son base64
+        useCORS: false,
         allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
         windowWidth: 800,
         onclone: (clonedDoc) => {
-          // A. Reemplazar oklch/oklab en todas las etiquetas <style> del documento clonado
-          const styleElements = Array.from(clonedDoc.querySelectorAll('style'));
-          styleElements.forEach((styleTag) => {
-            if (
-              styleTag.textContent &&
-              (styleTag.textContent.includes('oklch') ||
-                styleTag.textContent.includes('oklab') ||
-                styleTag.textContent.includes('color-mix'))
-            ) {
-              styleTag.textContent = replaceUnsupportedColors(styleTag.textContent);
-            }
-          });
-
-          // B. Reemplazar oklch/oklab en atributos style de todos los elementos clonados
-          const allElements = Array.from(clonedDoc.querySelectorAll('*'));
-          allElements.forEach((node) => {
-            const el = node as HTMLElement;
-            const styleAttr = el.getAttribute('style');
-            if (
-              styleAttr &&
-              (styleAttr.includes('oklch') ||
-                styleAttr.includes('oklab') ||
-                styleAttr.includes('color-mix'))
-            ) {
-              el.setAttribute('style', replaceUnsupportedColors(styleAttr));
-            }
-          });
+          sanitizeDocumentStyles(clonedDoc);
         },
       }),
       new Promise<HTMLCanvasElement>((_, reject) =>
@@ -350,7 +439,6 @@ export async function exportElementToPdf({
       ),
     ]);
 
-    // Eliminar el wrapper del DOM
     if (outerWrapper && outerWrapper.parentNode) {
       outerWrapper.parentNode.removeChild(outerWrapper);
       outerWrapper = null;
@@ -434,7 +522,6 @@ export async function exportElementToPdf({
     // 12. DISPARAR DESCARGA CON MÚLTIPLES MÉTODOS DE FALLBACK
     let downloaded = false;
 
-    // Método A: pdf.save de jsPDF
     try {
       pdf.save(filename);
       downloaded = true;
@@ -442,7 +529,6 @@ export async function exportElementToPdf({
       console.warn('Fallback: pdf.save falló:', e);
     }
 
-    // Método B: Generación de Blob y click en enlace <a>
     try {
       const pdfBlob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
@@ -465,7 +551,6 @@ export async function exportElementToPdf({
       console.warn('Fallback: Enlace Blob falló:', e);
     }
 
-    // Método C: Data URI directo si lo anterior falló en navegadores restringidos
     if (!downloaded) {
       try {
         const dataUri = pdf.output('datauristring');
