@@ -42,11 +42,17 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
   if (!isOpen) return null;
 
   const handleDownloadPDF = async () => {
-    setIsSyncing(true);
     setIsExporting(true);
-    await saveResponseToSupabase(data, undefined, 'nuevo');
-    setIsSyncing(false);
-    setSynced(true);
+    setIsSyncing(true);
+
+    try {
+      await saveResponseToSupabase(data, undefined, 'nuevo');
+      setSynced(true);
+    } catch (e) {
+      console.warn('Advertencia al sincronizar respuesta antes del PDF:', e);
+    } finally {
+      setIsSyncing(false);
+    }
 
     const cleanCompanyName = (data.companyName || 'Cliente').replace(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `Cuestionario_${cleanCompanyName}.pdf`;
@@ -58,8 +64,9 @@ export const SummaryModal: React.FC<SummaryModalProps> = ({
         setIsExporting(false);
         onToast('¡Documento PDF descargado exitosamente en su dispositivo!');
       },
-      onError: () => {
+      onError: (err) => {
         setIsExporting(false);
+        onToast(`Error al generar el PDF: ${err?.message || 'Intente nuevamente'}`);
       },
     });
   };

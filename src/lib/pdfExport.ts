@@ -10,7 +10,7 @@ interface ExportPdfOptions {
 }
 
 /**
- * Convierte una URL de imagen a un DataURL en base64 usando un canvas o fetch
+ * Convierte una URL de imagen a un DataURL en base64 usando canvas o fetch
  * para evitar problemas de CORS y 'tainted canvas' en html2canvas.
  */
 async function convertImageUrlToBase64(url: string): Promise<string> {
@@ -23,12 +23,11 @@ async function convertImageUrlToBase64(url: string): Promise<string> {
     const blob = await response.blob();
     return await new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
+      reader.onloadend = () => resolve(reader.result as string || url);
       reader.onerror = () => resolve(url);
       reader.readAsDataURL(blob);
     });
   } catch {
-    // Si falla fetch, intentamos cargar en una Image HTML con crossOrigin Anonymous
     return new Promise((resolve) => {
       const img = new Image();
       img.crossOrigin = 'Anonymous';
@@ -54,6 +53,37 @@ async function convertImageUrlToBase64(url: string): Promise<string> {
   }
 }
 
+/**
+ * Wrapper con timeout para garantizar que la conversión de imágenes nunca congele la exportación
+ */
+function convertImageUrlToBase64WithTimeout(url: string, timeoutMs = 2500): Promise<string> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve(url);
+      }
+    }, timeoutMs);
+
+    convertImageUrlToBase64(url)
+      .then((res) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(res);
+        }
+      })
+      .catch(() => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(url);
+        }
+      });
+  });
+}
+
 export async function exportElementToPdf({
   elementId,
   filename = 'Cuestionario.pdf',
@@ -71,18 +101,18 @@ export async function exportElementToPdf({
       throw new Error(`No se encontró el elemento a exportar con ID #${elementId}`);
     }
 
-    // 1. Crear contenedor de clonación fijo e invisible pero dentro del render tree de la ventana
+    // 1. Crear contenedor de clonación fuera de pantalla, con opacidad 1 (vital para html2canvas)
     cloneContainer = document.createElement('div');
     cloneContainer.style.position = 'fixed';
     cloneContainer.style.top = '0';
-    cloneContainer.style.left = '0';
+    cloneContainer.style.left = '-9999px'; // Posicionado fuera del área visible
     cloneContainer.style.width = '800px'; // Ancho A4 estandarizado (~190mm a 96DPI)
     cloneContainer.style.backgroundColor = '#ffffff';
     cloneContainer.style.color = '#0f172a';
     cloneContainer.style.padding = '24px';
     cloneContainer.style.boxSizing = 'border-box';
     cloneContainer.style.zIndex = '-999999';
-    cloneContainer.style.opacity = '0.001';
+    cloneContainer.style.opacity = '1'; // IMPORTANTE: Opacidad 1.0 para que html2canvas dibuje todos los colores y textos
     cloneContainer.style.pointerEvents = 'none';
 
     // 2. Clonar el elemento
@@ -111,7 +141,7 @@ export async function exportElementToPdf({
       inp.parentNode?.replaceChild(span, inp);
     });
 
-    // 4. Quitar botones, selects interactivos y elementos marcados con no-print
+    // 4. Quitar botones, selects interactivos y elementos no imprimibles
     clonedContent.querySelectorAll('.no-print, button, select').forEach((node) => {
       if (!node.classList.contains('keep-print')) {
         (node as HTMLElement).style.display = 'none';
@@ -128,17 +158,16 @@ export async function exportElementToPdf({
       }
     });
 
-    // 6. Procesar y restringir tamaño de TODAS las imágenes para evitar logos gigantes y taints de CORS
+    // 6. Procesar y restringir tamaño de TODAS las imágenes con timeout de protección
     const imgs = Array.from(clonedContent.querySelectorAll('img'));
     await Promise.all(
       imgs.map(async (img) => {
         const originalSrc = img.src;
         if (originalSrc) {
-          const base64Src = await convertImageUrlToBase64(originalSrc);
+          const base64Src = await convertImageUrlToBase64WithTimeout(originalSrc, 2500);
           img.src = base64Src;
         }
         img.removeAttribute('srcset');
-        // Si la imagen es un logo o encabezado, aseguramos su tamaño máximo
         if (img.classList.contains('shrink-0') || img.alt?.toLowerCase().includes('logo') || img.className.includes('h-10') || img.className.includes('h-12')) {
           img.style.maxHeight = '48px';
           img.style.height = '44px';
@@ -154,12 +183,12 @@ export async function exportElementToPdf({
     cloneContainer.appendChild(clonedContent);
     document.body.appendChild(cloneContainer);
 
-    // Pequeño tiempo de espera para re-flow completo
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Pequeña pausa para reflow del navegador
+    await new Promise((resolve) => setTimeout(resolve, 250));
 
-    // 7. Capturar canvas completo con html2canvas
+    // 7. Capturar el contenedor usando html2canvas
     const canvas = await html2canvas(cloneContainer, {
-      scale: 2, // 300 DPI aprox
+      scale: 2, // Calidad alta (300 DPI aprox)
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -167,14 +196,14 @@ export async function exportElementToPdf({
       windowWidth: 800,
     });
 
-    // Remover clon del DOM inmediatamente
+    // Remover el contenedor clon del DOM
     if (cloneContainer && cloneContainer.parentNode) {
       cloneContainer.parentNode.removeChild(cloneContainer);
       cloneContainer = null;
     }
 
     if (!canvas || canvas.width === 0 || canvas.height === 0) {
-      throw new Error('No se pudo capturar el contenido del documento.');
+      throw new Error('No se pudo renderizar la captura del documento.');
     }
 
     // 8. Crear PDF A4 (210mm x 297mm) con jsPDF
@@ -194,7 +223,6 @@ export async function exportElementToPdf({
     const imgWidthPx = canvas.width;
     const imgHeightPx = canvas.height;
 
-    // Escala mm por píxel
     const mmPerPx = printableWidth / imgWidthPx;
     const pxPerPage = Math.floor(printableHeight / mmPerPx);
 
@@ -211,7 +239,6 @@ export async function exportElementToPdf({
 
       const chunkHeightPx = Math.min(pxPerPage, imgHeightPx - renderedHeightPx);
 
-      // Canvas auxiliar para la página actual
       const pageCanvas = document.createElement('canvas');
       pageCanvas.width = imgWidthPx;
       pageCanvas.height = chunkHeightPx;
@@ -236,14 +263,12 @@ export async function exportElementToPdf({
       const pageDataUrl = pageCanvas.toDataURL('image/jpeg', 0.92);
       const chunkHeightMm = chunkHeightPx * mmPerPx;
 
-      // Insertar imagen en la página A4 con márgenes de 10mm
       pdf.addImage(pageDataUrl, 'JPEG', margin, margin, printableWidth, chunkHeightMm);
 
-      // Pie de página oficial con folio y paginación
       pdf.setFontSize(8);
       pdf.setTextColor(148, 163, 184); // Slate 400
       pdf.text(
-        `Página ${pageIndex + 1} de ${totalPages} • Documento Oficial Cuestionario de Requerimientos`,
+        `Página ${pageIndex + 1} de ${totalPages} • Cuestionario de Requerimientos de Software`,
         margin,
         pageHeight - 4
       );
@@ -252,15 +277,35 @@ export async function exportElementToPdf({
       pageIndex++;
     }
 
-    // 9. DESCARGA DIRECTA DEL ARCHIVO PDF AL DISPOSITIVO (SIN ABRIR IMPRESORA)
-    pdf.save(filename);
+    // 9. DESCARGA DIRECTA DEL ARCHIVO PDF AL DISPOSITIVO (BLOB + LINK DOWNLOAD + SAVE FALLBACK)
+    const pdfBlob = pdf.output('blob');
+    const blobUrl = URL.createObjectURL(pdfBlob);
+
+    const downloadLink = document.createElement('a');
+    downloadLink.href = blobUrl;
+    downloadLink.download = filename;
+    downloadLink.style.display = 'none';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+
+    try {
+      pdf.save(filename);
+    } catch (saveErr) {
+      console.warn('Ejecutado fallback de descarga para PDF:', saveErr);
+    }
+
+    setTimeout(() => {
+      if (downloadLink.parentNode) {
+        downloadLink.parentNode.removeChild(downloadLink);
+      }
+      URL.revokeObjectURL(blobUrl);
+    }, 15000);
 
     onFinish?.();
     return true;
   } catch (err: any) {
-    console.error('Error al generar el archivo PDF directo:', err);
+    console.error('Error durante la generación y descarga del PDF:', err);
 
-    // Limpiar contenedor si quedó en el DOM
     if (cloneContainer && cloneContainer.parentNode) {
       cloneContainer.parentNode.removeChild(cloneContainer);
     }

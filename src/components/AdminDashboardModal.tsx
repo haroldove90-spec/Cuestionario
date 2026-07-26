@@ -112,8 +112,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
         setIsExportingPdf(false);
         onSuccessToast('¡Documento PDF descargado exitosamente en su dispositivo!');
       },
-      onError: () => {
+      onError: (err) => {
         setIsExportingPdf(false);
+        onSuccessToast(`Error al exportar PDF: ${err?.message || 'Intente de nuevo'}`);
       },
     });
   };
