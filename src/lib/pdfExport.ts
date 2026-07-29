@@ -23,7 +23,12 @@ function oklchToRgb(oklchStr: string): string {
       const splitSlash = clean.split('/');
       partsStr = splitSlash[0];
       const alphaStr = splitSlash[1].trim();
-      alpha = alphaStr.endsWith('%') ? parseFloat(alphaStr) / 100 : parseFloat(alphaStr);
+      if (alphaStr.endsWith('%')) {
+        alpha = parseFloat(alphaStr) / 100;
+      } else {
+        const parsedA = parseFloat(alphaStr);
+        if (!isNaN(parsedA)) alpha = parsedA;
+      }
     }
 
     const parts = partsStr.split(/[\s,]+/).filter(Boolean);
@@ -31,13 +36,26 @@ function oklchToRgb(oklchStr: string): string {
 
     let l = parseFloat(parts[0]);
     if (parts[0].endsWith('%')) l /= 100;
+    if (isNaN(l)) l = 0;
 
     let c = parseFloat(parts[1]);
     if (parts[1].endsWith('%')) c /= 100;
+    if (isNaN(c) || parts[1] === 'none') c = 0;
 
-    let h = parseFloat(parts[2]);
-
-    if (isNaN(l) || isNaN(c) || isNaN(h)) return '#334155';
+    let h = 0;
+    if (parts[2] && parts[2] !== 'none') {
+      const rawH = parts[2].toLowerCase();
+      if (rawH.endsWith('deg')) {
+        h = parseFloat(rawH);
+      } else if (rawH.endsWith('rad')) {
+        h = (parseFloat(rawH) * 180) / Math.PI;
+      } else if (rawH.endsWith('turn')) {
+        h = parseFloat(rawH) * 360;
+      } else {
+        h = parseFloat(rawH);
+      }
+    }
+    if (isNaN(h)) h = 0;
 
     // OKLCH -> OKLAB
     const hRad = (h * Math.PI) / 180;
@@ -95,9 +113,10 @@ function sanitizeAllCssColors(cssText: string): string {
 }
 
 /**
- * Sanitiza todas las hojas de estilo y atributos de color en el documento para eliminar oklch/oklab
+ * Sanitiza todas las hojas de estilo y atributos de color en el documento clonado para html2canvas
+ * SIN alterar el documento principal en vivo para evitar romper la interfaz.
  */
-function sanitizeDocumentStyles(doc: Document) {
+function sanitizeClonedDocumentStyles(doc: Document) {
   // 1. Sanitizar todas las etiquetas <style>
   const styleTags = Array.from(doc.querySelectorAll('style'));
   styleTags.forEach((styleTag) => {
@@ -111,34 +130,7 @@ function sanitizeDocumentStyles(doc: Document) {
     }
   });
 
-  // 2. Convertir etiquetas <link rel="stylesheet"> con oklch a <style> inline sanitizadas
-  const linkTags = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'));
-  linkTags.forEach((link) => {
-    try {
-      const sheet = (link as HTMLLinkElement).sheet;
-      if (sheet && sheet.cssRules) {
-        let cssText = '';
-        for (let i = 0; i < sheet.cssRules.length; i++) {
-          cssText += sheet.cssRules[i].cssText + '\n';
-        }
-        if (
-          cssText.includes('oklch') ||
-          cssText.includes('oklab') ||
-          cssText.includes('color-mix')
-        ) {
-          const sanitized = sanitizeAllCssColors(cssText);
-          const newStyle = doc.createElement('style');
-          newStyle.textContent = sanitized;
-          doc.head.appendChild(newStyle);
-          link.remove();
-        }
-      }
-    } catch {
-      // Ignorar restricciones CORS de stylesheet externas
-    }
-  });
-
-  // 3. Sanitizar atributos inline de estilo en todos los elementos
+  // 2. Sanitizar atributos inline de estilo en todos los elementos
   const allElements = Array.from(doc.querySelectorAll('*'));
   allElements.forEach((node) => {
     const el = node as HTMLElement;
@@ -155,7 +147,7 @@ function sanitizeDocumentStyles(doc: Document) {
 }
 
 /**
- * Convierte una URL de imagen a un DataURL en base64 usando canvas o fetch
+ * Convierte una URL de imagen a un DataURL en base64 usando fetch o canvas
  * para evitar problemas de CORS y 'tainted canvas' en html2canvas.
  */
 async function convertImageUrlToBase64(url: string): Promise<string> {
@@ -175,7 +167,7 @@ async function convertImageUrlToBase64(url: string): Promise<string> {
   } catch {
     return new Promise((resolve) => {
       const img = new Image();
-      img.crossOrigin = 'Anonymous';
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -201,7 +193,7 @@ async function convertImageUrlToBase64(url: string): Promise<string> {
 /**
  * Wrapper con timeout para garantizar que la conversión de imágenes no bloquee el proceso
  */
-function convertImageUrlToBase64WithTimeout(url: string, timeoutMs = 2000): Promise<string> {
+function convertImageUrlToBase64WithTimeout(url: string, timeoutMs = 2500): Promise<string> {
   return new Promise((resolve) => {
     let resolved = false;
     const timer = setTimeout(() => {
@@ -246,18 +238,17 @@ export async function exportElementToPdf({
       throw new Error(`No se encontró el elemento a exportar con ID #${elementId}`);
     }
 
-    // SANITIZAR EL DOCUMENTO PRINCIPAL ANTES DE CLONAR
-    sanitizeDocumentStyles(document);
-
-    // 1. Contenedor fuera de pantalla con ancho completo y altura automática sin recortes
+    // 1. Contenedor fuera de pantalla a (0,0) fijo con z-index negativo
+    // Importante: Usar left: 0; top: 0; position: fixed; para evitar coordenadas negativas en html2canvas
     outerWrapper = document.createElement('div');
-    outerWrapper.style.position = 'absolute';
+    outerWrapper.style.position = 'fixed';
     outerWrapper.style.top = '0';
-    outerWrapper.style.left = '-9999px';
+    outerWrapper.style.left = '0';
     outerWrapper.style.width = '800px';
     outerWrapper.style.height = 'auto';
     outerWrapper.style.overflow = 'visible';
     outerWrapper.style.zIndex = '-999999';
+    outerWrapper.style.opacity = '1';
     outerWrapper.style.pointerEvents = 'none';
 
     // 2. Contenedor interno clonado a ancho A4 estándar (800px ~ 190mm a 96dpi)
@@ -270,7 +261,6 @@ export async function exportElementToPdf({
     cloneContainer.style.color = '#0f172a';
     cloneContainer.style.padding = '24px';
     cloneContainer.style.boxSizing = 'border-box';
-    cloneContainer.style.opacity = '1';
 
     // 3. Clonar el contenido original
     const clonedContent = originalElement.cloneNode(true) as HTMLElement;
@@ -284,7 +274,8 @@ export async function exportElementToPdf({
     textareas.forEach((ta) => {
       const val = (ta as HTMLTextAreaElement).value || ta.textContent || '';
       const div = document.createElement('div');
-      div.className = 'p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono whitespace-pre-wrap leading-relaxed text-slate-800';
+      div.className =
+        'p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono whitespace-pre-wrap leading-relaxed text-slate-800';
       div.textContent = val || 'Sin contenido especificado';
       ta.parentNode?.replaceChild(div, ta);
     });
@@ -392,8 +383,12 @@ export async function exportElementToPdf({
       imgs.map(async (img) => {
         const originalSrc = img.src;
         if (originalSrc) {
-          const base64Src = await convertImageUrlToBase64WithTimeout(originalSrc, 2000);
-          img.src = base64Src;
+          const base64Src = await convertImageUrlToBase64WithTimeout(originalSrc, 2500);
+          if (base64Src && base64Src.startsWith('data:')) {
+            img.src = base64Src;
+          } else {
+            img.setAttribute('crossOrigin', 'anonymous');
+          }
         }
         img.removeAttribute('srcset');
         if (
@@ -427,31 +422,45 @@ export async function exportElementToPdf({
       cloneContainer.offsetHeight,
       clonedContent.scrollHeight,
       clonedContent.offsetHeight,
-      1200
+      1000
     );
 
     // 9. Renderizar canvas completo con html2canvas especificando alto exacto
-    const canvas = await Promise.race([
-      html2canvas(cloneContainer, {
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await html2canvas(cloneContainer, {
         scale: 2,
-        useCORS: false,
-        allowTaint: true,
+        useCORS: true,
+        allowTaint: false,
         logging: false,
         backgroundColor: '#ffffff',
         width: targetWidth,
         height: targetHeight,
         windowWidth: targetWidth,
-        windowHeight: targetHeight + 200,
+        windowHeight: targetHeight + 300,
+        x: 0,
+        y: 0,
         scrollX: 0,
         scrollY: 0,
         onclone: (clonedDoc) => {
-          sanitizeDocumentStyles(clonedDoc);
+          sanitizeClonedDocumentStyles(clonedDoc);
         },
-      }),
-      new Promise<HTMLCanvasElement>((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout al procesar el lienzo del documento PDF')), 15000)
-      ),
-    ]);
+      });
+    } catch (firstErr) {
+      console.warn('Reintentando captura de lienzo PDF a escala 1:', firstErr);
+      canvas = await html2canvas(cloneContainer, {
+        scale: 1,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: targetWidth,
+        height: targetHeight,
+        onclone: (clonedDoc) => {
+          sanitizeClonedDocumentStyles(clonedDoc);
+        },
+      });
+    }
 
     if (outerWrapper && outerWrapper.parentNode) {
       outerWrapper.parentNode.removeChild(outerWrapper);
